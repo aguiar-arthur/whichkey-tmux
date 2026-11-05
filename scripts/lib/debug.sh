@@ -1,7 +1,6 @@
 # Debug log. With @whichkey-debug on, whichkey.tmux creates WK_DEBUG_FLAG,
-# and every script then traces itself into WK_DEBUG_LOG. A file rather than
-# an environment variable: on tmux 3.4, run-shell jobs did not see a
-# variable set with set-environment after the server started.
+# and every script then traces itself into WK_DEBUG_LOG. Checking for a file
+# costs no tmux call, so scripts can test it before doing anything else.
 
 WK_DEBUG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/whichkey-tmux"
 WK_DEBUG_FLAG="$WK_DEBUG_DIR/debug.on"

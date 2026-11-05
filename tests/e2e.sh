@@ -175,8 +175,9 @@ key() {
 }
 
 # typed <bytes>: type raw bytes (printf %b escapes) into the main client.
-# Menus are driven this way: before tmux 3.8 a menu does not match keys
-# from send-keys -K to its items.
+# Menus and popups are closed or driven this way: before tmux 3.8 a menu
+# does not match keys from send-keys -K to its items, and on tmux 3.4 a
+# popup does not receive Escape from send-keys -K.
 typed() { printf '%b' "$1" >&3; }
 
 # open <text> <key...>: press the keys and wait until <text> is drawn.
@@ -358,8 +359,11 @@ mark
 t send-keys -c "$main" -K C-b
 t send-keys -c "$second" -K C-b
 expect_drawn "a prefix on another client does not cancel the popup" "Enter group"
-key Escape
-t send-keys -c "$second" -K Escape
+typed '\033'
+# The second client's popup may still be on its way: wait for it, then
+# type Escape into that client.
+wait_for grep -aqF "Enter group" "$WORK/second.log"
+printf '\033' >&4
 wait_for table_is root "$second"
 if option_unset "@whichkey-seq-$second"; then
 	fail "no sequence number for the second client"
@@ -378,7 +382,7 @@ echo "-- options"
 t set -g @whichkey-debug on
 t run-shell "$ROOT/whichkey.tmux"
 open "Enter group" C-b
-key Escape
+typed '\033'
 debug_log="$XDG_CACHE_HOME/whichkey-tmux/debug.log"
 logged() { grep -q "== .* $1" "$debug_log" 2>/dev/null; }
 if wait_for logged auto.sh && wait_for logged popup.sh; then
@@ -411,13 +415,13 @@ check "the old prefix key is released" "" "$(binding root C-b)"
 check "the old prefix gets send-prefix back" send-prefix "$(binding prefix C-b)"
 open "Enter group" C-x
 expect_drawn "the new prefix shows the popup" "Enter group"
-key Escape
+typed '\033'
 
 stop
 start 10 auto.conf
 open " prefix " C-b
 expect_drawn "popup too small for every binding says how many more" "more"
-key Escape
+typed '\033'
 
 [ "$failures" -eq 0 ] && echo "all passed" || echo "$failures failed"
 exit "$failures"
