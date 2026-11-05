@@ -199,7 +199,18 @@ expect_drawn() {
 }
 windows_above() { [ "$(t display -p '#{session_windows}')" -gt "$1" ]; }
 table_is() { [ "$(t display -p -c "${2:-$client}" '#{client_key_table}')" = "$1" ]; }
-binding() { t list-keys -T "$1" -F '#{key_command}' "$2" 2>/dev/null; }
+# binding <table> <key>: the command bound to <key>, from list-keys' plain
+# output (-F is 3.7+, and list-keys <key> lists nothing before 3.8).
+binding() {
+	t list-keys -T "$1" | awk -v key="$2" '{
+		i = 2
+		while ($i ~ /^-/) i += ($i == "-T") ? 2 : 1
+		if ($i != key) next
+		out = $(i + 1)
+		for (j = i + 2; j <= NF; j++) out = out " " $j
+		print out
+	}'
+}
 option_unset() { [ -z "$(t show -gqv "$1")" ]; }
 
 echo "-- catalog menu"

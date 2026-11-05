@@ -17,16 +17,18 @@ get_option() {
 # read_formats <client> <var> <format> [<var> <format>...]: expand every
 # format for <client> in one round-trip and assign each result to its <var>.
 read_formats() {
-	local _client=$1 _format='' _vars=() _values=() _i
+	local _client=$1 _format='' _vars=() _values=() _i _out
 	shift
 	while [ "$#" -ge 2 ]; do
 		_vars+=("$1")
 		_format=$_format${_format:+$WK_SEP}$2
 		shift 2
 	done
-	IFS=$WK_SEP read -r -a _values <<EOF
-$(tmux display-message -p -c "$_client" "$_format")
-EOF
+	_out=$(tmux display-message -p -c "$_client" "$_format")
+	# Before tmux 3.7, display-message -p escapes control characters, so the
+	# separator arrives as the text \037.
+	_out=${_out//\\037/$WK_SEP}
+	IFS=$WK_SEP read -r -a _values <<<"$_out"
 	for ((_i = 0; _i < ${#_vars[@]}; _i++)); do
 		printf -v "${_vars[$_i]}" '%s' "${_values[$_i]}"
 	done

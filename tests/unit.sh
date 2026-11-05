@@ -142,6 +142,9 @@ echo "-- tmux queries (fake tmux)"
 tmux() { printf 'a%s%sc d\n' "$WK_SEP" "$WK_SEP"; }
 read_formats client x '#{x}' y '#{y}' z '#{z}'
 check "read_formats keeps empty fields" "a||c d" "$x|$y|$z"
+tmux() { printf '%s\n' 'a\037\037c d'; }
+read_formats client x '#{x}' y '#{y}' z '#{z}'
+check "read_formats: separator escaped by tmux < 3.7" "a||c d" "$x|$y|$z"
 
 # load_bindings: a cached default, a changed default, a new binding, a group.
 WK_TMUX_VERSION=9.9

@@ -132,12 +132,12 @@ teardown_auto() {
 }
 
 # apply_debug_option: start or stop the debug log, starting it afresh once it
-# passes 1 MB.
+# passes 10 MB.
 apply_debug_option() {
 	case $(get_option @whichkey-debug "$WK_DEFAULT_DEBUG") in
 	on | yes | 1)
 		mkdir -p "${WK_DEBUG_LOG%/*}"
-		if [ "$(wc -c <"$WK_DEBUG_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+		if [ "$(wc -c <"$WK_DEBUG_LOG" 2>/dev/null || echo 0)" -gt 10485760 ]; then
 			: >"$WK_DEBUG_LOG"
 		fi
 		tmux set-environment -g WHICHKEY_TMUX_DEBUG "$WK_DEBUG_LOG"
