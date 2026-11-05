@@ -13,10 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: mkdir -p docs/shots
       - uses: charmbracelet/vhs-action@v2
         with:
           path: docs/demo.tape
       - uses: actions/upload-artifact@v4
         with:
           name: demo
-          path: docs/demo.gif
+          path: |
+            docs/demo.gif
+            docs/shots/

@@ -14,7 +14,7 @@ Set Theme "Dracula"
 Set TypingSpeed 120ms
 
 Hide
-Type "PS1='$ ' tmux -L demo -f docs/demo.conf new -s demo" Enter
+Type "tmux -L demo -f docs/demo.conf new -s demo" Enter
 Sleep 2s
 Type "clear" Enter
 Sleep 500ms
@@ -24,6 +24,7 @@ Show
 Sleep 1s
 Ctrl+B
 Sleep 2.5s
+Screenshot docs/shots/popup.png
 Type "|"
 Sleep 1.5s
 
@@ -32,6 +33,7 @@ Ctrl+B
 Sleep 1.5s
 Type "w"
 Sleep 2.5s
+Screenshot docs/shots/group.png
 Type "n"
 Sleep 1.5s
 
@@ -46,6 +48,7 @@ Type " "
 Sleep 2.5s
 Down@300ms 4
 Sleep 1s
+Screenshot docs/shots/catalog.png
 Escape
 Sleep 1s
 
