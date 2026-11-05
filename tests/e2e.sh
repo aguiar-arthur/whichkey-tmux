@@ -383,7 +383,11 @@ else
 fi
 t set -g @whichkey-debug off
 t run-shell "$ROOT/whichkey.tmux"
-check "@whichkey-debug off stops tracing" "" "$(t show-environment -g WHICHKEY_TMUX_DEBUG 2>/dev/null | grep -v '^-')"
+if [ -e "$XDG_CACHE_HOME/whichkey-tmux/debug.on" ]; then
+	fail "@whichkey-debug off does not stop tracing"
+else
+	pass "@whichkey-debug off stops tracing"
+fi
 
 t set -g @whichkey-auto off
 t run-shell "$ROOT/whichkey.tmux"

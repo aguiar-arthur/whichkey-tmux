@@ -136,17 +136,13 @@ teardown_auto() {
 apply_debug_option() {
 	case $(get_option @whichkey-debug "$WK_DEFAULT_DEBUG") in
 	on | yes | 1)
-		mkdir -p "${WK_DEBUG_LOG%/*}"
+		mkdir -p "$WK_DEBUG_DIR"
 		if [ "$(wc -c <"$WK_DEBUG_LOG" 2>/dev/null || echo 0)" -gt 10485760 ]; then
 			: >"$WK_DEBUG_LOG"
 		fi
-		tmux set-environment -g WHICHKEY_TMUX_DEBUG "$WK_DEBUG_LOG"
-		WHICHKEY_TMUX_DEBUG=$WK_DEBUG_LOG
+		: >"$WK_DEBUG_FLAG"
 		;;
-	*)
-		tmux set-environment -gu WHICHKEY_TMUX_DEBUG 2>/dev/null
-		WHICHKEY_TMUX_DEBUG=
-		;;
+	*) rm -f "$WK_DEBUG_FLAG" ;;
 	esac
 	# shellcheck disable=SC2119 # no arguments to log
 	debug_init
