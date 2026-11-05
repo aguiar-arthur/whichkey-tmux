@@ -67,6 +67,7 @@ read_settings() {
 		key_style '#{@whichkey-key-style}' \
 		group_style '#{@whichkey-group-style}' \
 		border_lines '#{@whichkey-border-lines}'
+	WK_TMUX_VERSION=$version
 	label_width=${label_width:-$WK_DEFAULT_LABEL_WIDTH}
 	delay=${delay:-$WK_DEFAULT_DELAY}
 	border_lines=${border_lines:-$WK_DEFAULT_BORDER_LINES}
@@ -155,7 +156,7 @@ main() {
 	local max_rows content
 	still_waiting table || return
 	read_settings
-	load_bindings "$table" "$version"
+	load_bindings "$table"
 	select_cells || return
 
 	CELL=$((KEY_WIDTH + 3 + TEXT_WIDTH))

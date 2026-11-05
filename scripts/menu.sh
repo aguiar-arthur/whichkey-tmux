@@ -44,6 +44,7 @@ read_settings() {
 		label_width '#{@whichkey-label-width}' \
 		version '#{version}'
 	height=${height:-24}
+	WK_TMUX_VERSION=$version
 	pos_x=${pos_x:-$WK_DEFAULT_X}
 	pos_y=${pos_y:-$WK_DEFAULT_Y}
 	label_width=${label_width:-$WK_DEFAULT_LABEL_WIDTH}
@@ -162,7 +163,7 @@ free_key() {
 		printf -v "$_var" '%s' "$_key"
 		return
 	done
-	printf -v "$_var" ''
+	printf -v "$_var" '%s' ''
 }
 
 # menu_args: display-menu arguments for the rows START..END of ORDER, plus
@@ -206,7 +207,7 @@ show_menu() {
 
 main() {
 	read_settings
-	load_bindings "$table" "$version"
+	load_bindings "$table"
 	build_items
 	order_items
 	if [ "${#ORDER[@]}" -eq 0 ]; then

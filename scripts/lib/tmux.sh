@@ -32,24 +32,16 @@ EOF
 	done
 }
 
-# binding_command <var> <table> <key>: the command bound to <key> in
-# <table>, or empty.
-binding_command() {
-	printf -v "$1" '%s' "$(tmux list-keys -T "$2" -F '#{key_command}' "$3" 2>/dev/null)"
-}
-
-# tmux_version_at_least <major> <minor>: succeeds if the running tmux is at
-# least that version. Unparseable versions (e.g. "master") are assumed to be
-# new enough.
-tmux_version_at_least() {
-	local version major minor
-	version=$(tmux display-message -p '#{version}')
-	version=${version#next-}
-	major=${version%%.*}
-	minor=${version#*.}
-	minor=${minor%%[!0-9]*}
-	case $major$minor in
+# version_at_least <version> <major> <minor>: succeeds if a tmux version
+# (#{version}, e.g. 3.5a or next-3.9) is at least <major>.<minor>.
+# Unparseable versions (e.g. "master") are assumed to be new enough.
+version_at_least() {
+	local _version=${1#next-} _major _minor
+	_major=${_version%%.*}
+	_minor=${_version#*.}
+	_minor=${_minor%%[!0-9]*}
+	case $_major$_minor in
 	'' | *[!0-9]*) return 0 ;;
 	esac
-	[ "$major" -gt "$1" ] || { [ "$major" -eq "$1" ] && [ "$minor" -ge "$2" ]; }
+	[ "$_major" -gt "$2" ] || { [ "$_major" -eq "$2" ] && [ "$_minor" -ge "$3" ]; }
 }

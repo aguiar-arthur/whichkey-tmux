@@ -63,7 +63,9 @@ jobs:
       - run: echo "$HOME/tmux/bin" >>"$GITHUB_PATH"
       - run: tmux -V
       - name: Probe the tmux commands the plugin relies on
+        continue-on-error: true
         run: |
+          set +e
           t() { echo "\$ tmux $*"; tmux -L probe "$@" 2>&1; echo "  -> $?"; }
           t -f /dev/null new-session -d -s p
           t bind-key -N "A group" g switch-client -T grp
@@ -71,6 +73,8 @@ jobs:
           t list-keys -T prefix -F '#{key_command}' g
           t list-keys -T prefix C-b
           t list-keys -T prefix -F '#{key_string}|#{key_note}|#{key_command}' | grep -E '^(g|c|C-b)[|]'
+          t list-keys -T prefix | grep -E 'prefix +(g|H|C-b|\\;|\\#) '
+          t list-keys -N -P '' -T prefix | grep -E '^(g|c|C-b|;|#) '
           t display-message -p '#{version} #{e|+:1,1} #{client_key_table} #{window_layout}'
           t run-shell -b -d 0.1 true
           t send-keys -K -H 61

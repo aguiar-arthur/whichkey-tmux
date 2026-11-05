@@ -9,6 +9,8 @@ source "$LIB/quote.sh"
 source "$LIB/options.sh"
 # shellcheck source=scripts/lib/tmux.sh
 source "$LIB/tmux.sh"
+# shellcheck source=scripts/lib/bindings.sh
+source "$LIB/bindings.sh"
 # shellcheck source=scripts/lib/automode.sh
 source "$LIB/automode.sh"
 # shellcheck source=scripts/lib/debug.sh
@@ -152,7 +154,8 @@ apply_debug_option() {
 
 main() {
 	apply_debug_option
-	if ! tmux_version_at_least 3 4; then
+	WK_TMUX_VERSION=$(tmux display-message -p '#{version}')
+	if ! version_at_least "$WK_TMUX_VERSION" 3 4; then
 		tmux display-message "whichkey-tmux: requires tmux 3.4 or newer"
 		return
 	fi

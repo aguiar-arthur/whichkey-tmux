@@ -144,6 +144,7 @@ read_formats client x '#{x}' y '#{y}' z '#{z}'
 check "read_formats keeps empty fields" "a||c d" "$x|$y|$z"
 
 # load_bindings: a cached default, a changed default, a new binding, a group.
+WK_TMUX_VERSION=9.9
 export XDG_CACHE_HOME="$WORK/cache"
 mkdir -p "$XDG_CACHE_HOME/whichkey-tmux"
 printf 'c%sCreate a new window%snew-window\nd%s%sdetach-client\n' \
@@ -154,7 +155,7 @@ tmux() {
 	printf 'G%sLazygit%sdisplay-popup -E lazygit\n' "$WK_SEP" "$WK_SEP"
 	printf 'g%s%sswitch-client -T git\n' "$WK_SEP" "$WK_SEP"
 }
-load_bindings prefix 9.9
+load_bindings prefix
 check "load_bindings keys" "c d G g" "${WK_KEYS[*]}"
 check "load_bindings user vs default" "0 1 1 1" "${WK_IS_USER[*]}"
 check "load_bindings groups" "|||git" "${WK_GROUP[0]}|${WK_GROUP[1]}|${WK_GROUP[2]}|${WK_GROUP[3]}"
@@ -164,6 +165,54 @@ binding_label out 1
 check "binding_label: command without a note" "kill-pane" "$out"
 binding_label out 3
 check "binding_label: group without a note" "+git" "$out"
+binding_command out prefix g
+check "binding_command" "switch-client -T git" "$out"
+binding_command out prefix c
+check "binding_command: first line" "new-window" "$out"
+binding_command out prefix X
+check "binding_command: unbound key" "" "$out"
+
+# Before tmux 3.7: list-keys has no -F, so its plain output is parsed.
+plain='bind-key    -T prefix C-b     send-prefix
+bind-key    -T prefix \#      display-message hi
+bind-key    -T prefix \;      last-pane
+bind-key    -T prefix \\      display-message bs
+bind-key -r -T prefix H       resize-pane -L
+bind-key    -T prefix g       switch-client -T grp
+bind-key    -T prefix x       display-message "a  b"'
+notes='C-b     Send the prefix key
+#       A note
+;       Last pane
+H       Resize left
+\       Back slash'
+parse_list_keys out "$plain" "$notes"
+want="C-b${WK_SEP}Send the prefix key${WK_SEP}send-prefix
+#${WK_SEP}A note${WK_SEP}display-message hi
+;${WK_SEP}Last pane${WK_SEP}last-pane
+\\${WK_SEP}Back slash${WK_SEP}display-message bs
+H${WK_SEP}Resize left${WK_SEP}resize-pane -L
+g${WK_SEP}${WK_SEP}switch-client -T grp
+x${WK_SEP}${WK_SEP}display-message \"a  b\""
+check "parse_list_keys" "$want" "$out"
+
+WK_TMUX_VERSION=3.4
+tmux() {
+	case " $* " in
+	*" -F "*) echo "command list-keys: unknown flag -F" >&2 ;;
+	*" -N "*) printf '%s\n' "$notes" ;;
+	*) printf '%s\n' "$plain" ;;
+	esac
+}
+list_bindings out prefix
+check "list_bindings before 3.7 reads the plain output" "$want" "$out"
+binding_command out prefix H
+check "binding_command before 3.7" "resize-pane -L" "$out"
+
+for v in '3.4 yes' '3.7c yes' '3.10 yes' '4.0 yes' '3.3a no' '2.9 no' 'next-3.9 yes' 'master yes'; do
+	set -- $v
+	version_at_least "$1" 3 4 && r=yes || r=no
+	check "version_at_least $1 3.4" "$2" "$r"
+done
 unset -f tmux
 
 echo
