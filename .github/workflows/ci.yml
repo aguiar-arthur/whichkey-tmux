@@ -80,6 +80,10 @@ jobs:
           t send-keys -K -H 61
           t display-menu -x C -y S Item i "display-message hi"
           t display-popup -E -b rounded -T title true
+          t set-environment -g WK_PROBE set-later
+          t run-shell -b 'echo "run-shell: [$WK_PROBE] [$XDG_CACHE_HOME]" >/tmp/wkp1'
+          t run-shell -b -d 0.1 'echo "run-shell -d: [$WK_PROBE] [$XDG_CACHE_HOME]" >/tmp/wkp2'
+          sleep 0.5; cat /tmp/wkp1 /tmp/wkp2
           t kill-server
       - run: make e2e
         env:

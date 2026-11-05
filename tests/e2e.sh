@@ -145,7 +145,12 @@ new_client() {
 
 # start <rows> [config]: start the server and attach the main client.
 start() {
-	t -f "$WORK/${2:-tmux.conf}" new-session -d -s test
+	if [ -n "$keep_work" ]; then
+		# With E2E_WORK, also keep tmux's own log (-vv), in $WORK.
+		(cd "$WORK" && t -vv -f "$WORK/${2:-tmux.conf}" new-session -d -s test)
+	else
+		t -f "$WORK/${2:-tmux.conf}" new-session -d -s test
+	fi
 	attach 3 "$1" main || {
 		echo "FAIL: could not attach a client"
 		exit 1
