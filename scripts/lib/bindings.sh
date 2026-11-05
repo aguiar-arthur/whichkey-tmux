@@ -10,20 +10,43 @@ WK_GROUP_RE='^switch-client -T ([^ ]+)$'
 # list_bindings <var> <table> [<tmux option>...]: the bindings of <table>, one
 # WK_BINDING_FORMAT line each. The tmux options (e.g. -L socket) select
 # another server.
+#
+# Three ways, by tmux version:
+#   3.8+  list-keys -T <table> -F
+#   3.7   list-keys -F for every table, filtered: 3.7 shows a table with a
+#         single binding in the status line instead of printing it
+#   older list-keys has no -F: parse its plain output, and the notes from
+#         list-keys -N
+# WHICHKEY_TMUX_LIST=all or =plain forces one of the older ways, for tests.
 list_bindings() {
-	local _var=$1 _table=$2 _plain _notes
+	local _var=$1 _table=$2 _way=$WHICHKEY_TMUX_LIST _all _line _out='' _plain _notes
 	shift 2
-	# WHICHKEY_TMUX_PLAIN=1 forces the pre-3.8 path, for tests.
-	if [ -z "$WHICHKEY_TMUX_PLAIN" ] && version_at_least "$WK_TMUX_VERSION" 3 8; then
+	if [ -z "$_way" ]; then
+		if version_at_least "$WK_TMUX_VERSION" 3 8; then
+			_way=table
+		elif version_at_least "$WK_TMUX_VERSION" 3 7; then
+			_way=all
+		else
+			_way=plain
+		fi
+	fi
+	case $_way in
+	table)
 		printf -v "$_var" '%s' "$(tmux "$@" list-keys -T "$_table" -F "$WK_BINDING_FORMAT" 2>/dev/null)"
-	else
-		# list-keys has no -F before 3.7, and in 3.7 it lists nothing for
-		# tables a config creates: read the plain output, and the notes
-		# from list-keys -N.
+		;;
+	all)
+		_all=$(tmux "$@" list-keys -F "#{key_table}$WK_SEP$WK_BINDING_FORMAT" 2>/dev/null)
+		while IFS= read -r _line; do
+			case $_line in "$_table$WK_SEP"*) _out="$_out${_line#*"$WK_SEP"}"$'\n' ;; esac
+		done <<<"$_all"
+		printf -v "$_var" '%s' "${_out%$'\n'}"
+		;;
+	*)
 		_plain=$(tmux "$@" list-keys -T "$_table" 2>/dev/null)
 		_notes=$(tmux "$@" list-keys -N -P '' -T "$_table" 2>/dev/null)
 		parse_list_keys "$_var" "$_plain" "$_notes"
-	fi
+		;;
+	esac
 }
 
 # parse_list_keys <var> <plain> <notes>: WK_BINDING_FORMAT lines from the

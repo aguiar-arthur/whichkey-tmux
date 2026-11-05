@@ -170,6 +170,8 @@ key() {
 }
 
 # typed <bytes>: type raw bytes (printf %b escapes) into the main client.
+# Menus are driven this way: before tmux 3.8 a menu does not match keys
+# from send-keys -K to its items.
 typed() { printf '%b' "$1" >&3; }
 
 # open <text> <key...>: press the keys and wait until <text> is drawn.
@@ -221,23 +223,25 @@ option_unset() { [ -z "$(t show -gqv "$1")" ]; }
 echo "-- catalog menu"
 start 100
 
-for pair in "q q" "j j" "G G" "Enter Enter" "# hash" "\$ dollar" "% percent" \
-	"' squote" "\" dquote" "; semicolon" "{ lbrace" "} rbrace" "~ tilde" "\\ backslash" \
-	"C-n C-n"; do
-	k=${pair%% *}
-	open " prefix " C-b Space || fail "menu did not open for $k"
-	key "$k"
-	expect_fired "key $k" "${pair#* }"
+# <bytes typed> <@wk-test value>
+for pair in "q q" "j j" "G G" "\r Enter" "# hash" "\$ dollar" "% percent" \
+	"' squote" "\" dquote" "; semicolon" "{ lbrace" "} rbrace" "~ tilde" \
+	"\\\\ backslash" "\016 C-n"; do
+	open " prefix " C-b Space || fail "menu did not open for ${pair#* }"
+	typed "${pair%% *}"
+	expect_fired "menu: ${pair#* }" "${pair#* }"
 done
 
 open " prefix " C-b Space
-open " wkgroup " g
-key a
-expect_fired "group submenu" group-a
+mark
+typed g
+expect_drawn "menu: a group opens its submenu" " wkgroup "
+typed a
+expect_fired "group submenu runs its binding" group-a
 
 before=$(t display -p '#{session_windows}')
 open " prefix " C-b Space
-key c
+typed c
 wait_for windows_above "$before"
 check "built-in binding (new-window)" $((before + 1)) "$(t display -p '#{session_windows}')"
 
@@ -260,7 +264,7 @@ else
 fi
 # C-n is bound in the config, so the next page moves to NPage.
 mark
-key NPage
+typed '\033[6~'
 expect_drawn "pagination avoids a key you bound" "prefix (2/"
 key Escape
 

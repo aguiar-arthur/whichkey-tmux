@@ -211,9 +211,24 @@ tmux() {
 	esac
 }
 list_bindings out prefix
-check "list_bindings before 3.8 reads the plain output" "$want" "$out"
+check "list_bindings before 3.7 reads the plain output" "$want" "$out"
 binding_command out prefix H
-check "binding_command before 3.8" "resize-pane -L" "$out"
+check "binding_command before 3.7" "resize-pane -L" "$out"
+
+# tmux 3.7: every table is listed with -F and filtered.
+WK_TMUX_VERSION=3.7c
+tmux() {
+	case " $* " in
+	*" -T "*) ;; # 3.7 prints nothing for a table with one binding
+	*)
+		printf 'root%sC-b%s%sswitch-client -T prefix\n' "$WK_SEP" "$WK_SEP" "$WK_SEP"
+		printf 'grp%sa%sA note%sdisplay-message a\n' "$WK_SEP" "$WK_SEP" "$WK_SEP"
+		printf 'grp2%sb%s%sdisplay-message b\n' "$WK_SEP" "$WK_SEP" "$WK_SEP"
+		;;
+	esac
+}
+list_bindings out grp
+check "list_bindings on 3.7 filters every table" "a${WK_SEP}A note${WK_SEP}display-message a" "$out"
 
 for v in '3.4 yes' '3.7c yes' '3.10 yes' '4.0 yes' '3.3a no' '2.9 no' 'next-3.9 yes' 'master yes'; do
 	set -- $v
