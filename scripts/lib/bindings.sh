@@ -13,11 +13,13 @@ WK_GROUP_RE='^switch-client -T ([^ ]+)$'
 list_bindings() {
 	local _var=$1 _table=$2 _plain _notes
 	shift 2
-	if version_at_least "$WK_TMUX_VERSION" 3 7; then
+	# WHICHKEY_TMUX_PLAIN=1 forces the pre-3.8 path, for tests.
+	if [ -z "$WHICHKEY_TMUX_PLAIN" ] && version_at_least "$WK_TMUX_VERSION" 3 8; then
 		printf -v "$_var" '%s' "$(tmux "$@" list-keys -T "$_table" -F "$WK_BINDING_FORMAT" 2>/dev/null)"
 	else
-		# Before 3.7 list-keys has no -F: read its plain output, and the
-		# notes from list-keys -N.
+		# list-keys has no -F before 3.7, and in 3.7 it lists nothing for
+		# tables a config creates: read the plain output, and the notes
+		# from list-keys -N.
 		_plain=$(tmux "$@" list-keys -T "$_table" 2>/dev/null)
 		_notes=$(tmux "$@" list-keys -N -P '' -T "$_table" 2>/dev/null)
 		parse_list_keys "$_var" "$_plain" "$_notes"
@@ -28,10 +30,10 @@ list_bindings() {
 # output of `list-keys -T table` and `list-keys -N -P '' -T table`:
 #   bind-key -r -T prefix H       resize-pane -L
 #   H       Resize the pane left
-# list-keys escapes punctuation keys with a backslash (\; \#); the -N
-# output does not.
+# list-keys escapes punctuation keys with a backslash (\; \#) or quotes
+# them ("M-{"); the -N output does not.
 parse_list_keys() {
-	local _line _flag _key _command _note _rest _notes _out=''
+	local _line _key _command _note _rest _notes _out=''
 	# Index the notes as "\n<key>SEP<note>" so a key can be looked up with a
 	# pattern; a key is a single word, so `read` splits it off the note.
 	_notes=$'\n'
@@ -39,23 +41,19 @@ parse_list_keys() {
 		[ -z "$_key" ] || _notes="$_notes$_key$WK_SEP$_note"$'\n'
 	done <<<"$3"
 	while IFS= read -r _line; do
-		case $_line in bind-key*) ;; *) continue ;; esac
-		_line=${_line#bind-key}
+		case $_line in bind-key*-T\ *) ;; *) continue ;; esac
+		# Skip the flags up to and including "-T <table>": the key follows.
+		# (The key itself may be "-".)
+		_line=${_line#*-T }
+		_line=${_line#* }
 		_line=${_line#"${_line%%[! ]*}"}
-		# Flags (-r, -T table) up to the key.
-		while [ "${_line:0:1}" = - ]; do
-			_flag=${_line%% *}
-			_line=${_line#"$_flag"}
-			_line=${_line#"${_line%%[! ]*}"}
-			if [ "$_flag" = -T ]; then
-				_line=${_line#* }
-				_line=${_line#"${_line%%[! ]*}"}
-			fi
-		done
 		_key=${_line%% *}
 		_command=${_line#"$_key"}
 		_command=${_command#"${_command%%[! ]*}"}
-		case $_key in \\?) _key=${_key#\\} ;; esac
+		case $_key in
+		\\?) _key=${_key#\\} ;;
+		\"?*\") _key=${_key:1:${#_key}-2} ;;
+		esac
 		_note=''
 		case $_notes in
 		*$'\n'"$_key$WK_SEP"*)

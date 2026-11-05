@@ -175,14 +175,16 @@ check "binding_command: first line" "new-window" "$out"
 binding_command out prefix X
 check "binding_command: unbound key" "" "$out"
 
-# Before tmux 3.7: list-keys has no -F, so its plain output is parsed.
+# Before tmux 3.8, list-keys' plain output is parsed.
 plain='bind-key    -T prefix C-b     send-prefix
 bind-key    -T prefix \#      display-message hi
 bind-key    -T prefix \;      last-pane
 bind-key    -T prefix \\      display-message bs
 bind-key -r -T prefix H       resize-pane -L
+bind-key    -T prefix -       delete-buffer
 bind-key    -T prefix g       switch-client -T grp
-bind-key    -T prefix x       display-message "a  b"'
+bind-key    -T prefix x       display-message "a  b"
+bind-key    -T prefix "M-{"   send-keys -X previous-paragraph'
 notes='C-b     Send the prefix key
 #       A note
 ;       Last pane
@@ -194,8 +196,10 @@ want="C-b${WK_SEP}Send the prefix key${WK_SEP}send-prefix
 ;${WK_SEP}Last pane${WK_SEP}last-pane
 \\${WK_SEP}Back slash${WK_SEP}display-message bs
 H${WK_SEP}Resize left${WK_SEP}resize-pane -L
+-${WK_SEP}${WK_SEP}delete-buffer
 g${WK_SEP}${WK_SEP}switch-client -T grp
-x${WK_SEP}${WK_SEP}display-message \"a  b\""
+x${WK_SEP}${WK_SEP}display-message \"a  b\"
+M-{${WK_SEP}${WK_SEP}send-keys -X previous-paragraph"
 check "parse_list_keys" "$want" "$out"
 
 WK_TMUX_VERSION=3.4
@@ -207,9 +211,9 @@ tmux() {
 	esac
 }
 list_bindings out prefix
-check "list_bindings before 3.7 reads the plain output" "$want" "$out"
+check "list_bindings before 3.8 reads the plain output" "$want" "$out"
 binding_command out prefix H
-check "binding_command before 3.7" "resize-pane -L" "$out"
+check "binding_command before 3.8" "resize-pane -L" "$out"
 
 for v in '3.4 yes' '3.7c yes' '3.10 yes' '4.0 yes' '3.3a no' '2.9 no' 'next-3.9 yes' 'master yes'; do
 	set -- $v
