@@ -189,6 +189,9 @@ Notes:
   as `++window`, and the first popup came too late to be recorded.
 - CI records with Ubuntu's tmux (3.4 on `ubuntu-latest`), so `demo.conf` must
   not use newer options such as `theme`.
+- A vhs screenshot can be taken a step late (one showed the split typed
+  after it, with no popup). If a screenshot is wrong but CI is green, look
+  at the GIF's frame for that moment before suspecting the plugin.
 - `docs/shots/` is ignored by git; only the GIF is committed.
 - Changing what the tape shows (keys, the group, timing) means changing
   `demo.conf` and `demo.tape` together.
