@@ -251,10 +251,11 @@ typed c
 wait_for windows_above "$before"
 check "built-in binding (new-window)" $((before + 1)) "$(t display -p '#{session_windows}')"
 
-t set -g @whichkey-exclude '('
+# Shown as typed: messages are formats, and must not expand the regex.
+t set -g @whichkey-exclude '#{session_name}('
 mark
 key C-b Space
-expect_drawn "an invalid @whichkey-exclude is reported" "not a valid regex"
+expect_drawn "an invalid @whichkey-exclude is reported as typed" 'not a valid regex: #{session_name}('
 wait_for drawn " prefix "
 key Escape
 t set -gu @whichkey-exclude
@@ -389,6 +390,12 @@ if wait_for logged auto.sh && wait_for logged popup.sh; then
 	pass "@whichkey-debug traces the scripts"
 else
 	fail "@whichkey-debug: auto.sh or popup.sh missing from $debug_log"
+fi
+# It shows the commands of the user's bindings: only the user may read it.
+if [ -n "$(find "$debug_log" -perm 600 2>/dev/null)" ]; then
+	pass "the debug log is private (600)"
+else
+	fail "the debug log is not private: $(ls -l "$debug_log")"
 fi
 t set -g @whichkey-debug off
 t run-shell "$ROOT/whichkey.tmux"

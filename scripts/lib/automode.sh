@@ -49,13 +49,8 @@ send_prefix_command() {
 	esac
 }
 
-# While a prefix option is None, send-prefix sends nothing, so the prefix
-# table gets a stand-in that sends the key itself.
-
-# bind_prefix_standin <key>
-bind_prefix_standin() {
-	tmux bind-key -N "Send the prefix key" -T prefix "$1" send-keys "$1"
-}
+# While a prefix option is None, send-prefix sends nothing, so whichkey.tmux
+# gives the prefix table a stand-in that sends the key itself.
 
 # is_prefix_standin <key> <command>: <command> is our stand-in for <key>,
 # as list-keys shows it.

@@ -30,7 +30,7 @@ scripts/popup.sh         Runs inside the popup: draws the grid, reads one key, f
 scripts/lib/             Sourced libraries (no shebang, no side effects but variable definitions).
   quote.sh               Quoting for the tmux parser, formats, argv and sh. Pure.
   options.sh             WK_DEFAULT_* for every @whichkey-* option.
-  tmux.sh                get_option, read_formats (many formats, one call), version_at_least.
+  tmux.sh                read_formats (many formats, one call), version_at_least.
   bindings.sh            Reads a key table (three ways, by tmux version), the defaults cache,
                          user-vs-default classification, labels.
   keys.sh                Terminal bytes -> tmux key names; which keys are sent as hex. Pure.
@@ -52,15 +52,29 @@ exceptions are `bindings.sh` (needs `tmux.sh` for `WK_SEP` and
 ## Loading: whichkey.tmux
 
 Run by TPM or by `run-shell` at the end of `tmux.conf`, and again on every
-config reload. It must be idempotent.
+config reload. It must be idempotent, and it delays tmux's start, so it
+makes few tmux calls (about four):
 
-1. `apply_debug_option`: create or remove the debug flag file, start tracing.
-2. Read `#{version}` into `WK_TMUX_VERSION`; stop with a message below 3.4.
-3. `bind_menu_keys`: bind `@whichkey-key` (prefix table) and optionally
+1. `read_settings`: the version, every option, `#{prefix}` and `#{prefix2}`
+   in one `display-message`.
+2. `apply_debug_option`: create (mode 600) or remove the debug files, start
+   tracing.
+3. Stop with a message below tmux 3.4.
+4. `bind_menu_keys`: bind `@whichkey-key` (prefix table) and optionally
    `@whichkey-root-key` (root table) to
-   `run-shell -b "menu.sh '#{client_name}' '#{pane_id}' prefix"`.
-4. `setup_auto` or `teardown_auto`, depending on `@whichkey-auto`.
-5. `warm_defaults_cache`: build the defaults cache in the background.
+   `run-shell -b "menu.sh '#{client_name}' '#{pane_id}' prefix"`. Keys that
+   opened the menu before (`@whichkey-bound-key`,
+   `@whichkey-bound-root-key`) and no longer should are unbound.
+5. `setup_auto` or `teardown_auto`, depending on `@whichkey-auto`.
+6. `warm_defaults_cache`: build the defaults cache in the background.
+
+Changes are not sent one by one: `queue` collects tmux commands and
+`run_queue` sends them as one `tmux a \; b \; c` call (one for the menu
+keys, one for auto mode). Tables are listed at most once per load
+(`table_command`). In a tmux command sequence a failing command stops the
+rest, and the queue is ordered so that this is safe: `setup_auto` sets
+`prefix None` only after every binding it needs, and `teardown_auto`
+restores the prefix before anything else.
 
 ## Catalog flow
 
@@ -97,9 +111,9 @@ tmux switches to the prefix table internally, before any binding runs, so
 there is no event to attach a timer to. `setup_auto` therefore:
 
 1. Saves the configured key of `prefix` (and `prefix2`, if set) in
-   `@whichkey-prefix` / `@whichkey-prefix2`, and sets the option to `None`.
-   On a reload the option is already `None`, so the saved key is used. If
-   the config now sets a different key, the old one is released first.
+   `@whichkey-prefix` / `@whichkey-prefix2`. On a reload the option is
+   already `None`, so the saved key is used. If the config now sets a
+   different key, the old one is released first.
 2. Binds that key in `root`, `copy-mode` and `copy-mode-vi` (copy modes
    replace the root table) to the **trigger**:
 
@@ -115,7 +129,9 @@ there is no event to attach a timer to. `setup_auto` therefore:
 3. If the prefix table binds the key to `send-prefix` (or `send-prefix -2`),
    replaces it with `send-keys <key>`: `send-prefix` sends the prefix
    option, which is now `None`.
-4. Sets the hook `client-detached[7351]` to remove the client's sequence
+4. Sets the options to `None`: last, so that a failed binding above leaves
+   the prefix working.
+5. Sets the hook `client-detached[7351]` to remove the client's sequence
    option.
 
 `teardown_auto` (auto off + reload) reverses all of it. Turning the plugin
@@ -211,13 +227,14 @@ without a note).
 | Where | What | Written by |
 |---|---|---|
 | option `prefix`, `prefix2` | `None` while auto mode is on | `setup_auto` |
-| option `@whichkey-prefix`, `@whichkey-prefix2` | the user's prefix keys | `user_prefix` |
+| option `@whichkey-prefix`, `@whichkey-prefix2` | the user's prefix keys | `setup_auto` |
+| option `@whichkey-bound-key`, `@whichkey-bound-root-key` | keys currently bound to the catalog | `bind_menu_keys` |
 | option `@whichkey-seq` | global prefix-press counter | trigger |
 | option `@whichkey-seq-<client name>` | that client's last counter value | trigger; removed by the detach hook |
 | hook `client-detached[7351]` | removes the option above | `setup_auto` |
 | bindings | menu key(s); prefix keys in root/copy-mode tables; `send-keys <key>` stand-ins | `whichkey.tmux` |
 | `~/.cache/whichkey-tmux/defaults-<version>-<table>` | tmux's built-in bindings | `load_defaults` |
-| `~/.cache/whichkey-tmux/debug.on`, `debug.log` | debug flag and trace | `apply_debug_option`, `debug_init` |
+| `~/.cache/whichkey-tmux/debug.on`, `debug.log` | debug flag and trace (mode 600: it shows binding commands) | `apply_debug_option`, `debug_init` |
 | `$TMPDIR/whichkey.XXXXXX` | one popup's grid, short-lived | `auto.sh`, removed by `popup.sh` |
 
 `~/.cache` is `$XDG_CACHE_HOME` when set.

@@ -72,7 +72,7 @@ docs/                  internals docs; demo.tape/demo.conf record demo.gif
 ### tmux
 
 8. **Never call `list-keys` or parse key tables directly.** Use
-   `load_bindings`, `list_bindings` or `binding_command` (bindings.sh). They
+   `load_bindings`, `list_bindings` or `lookup_command` (bindings.sh). They
    handle the three ways tmux 3.4-3.8 can list keys, and they produce
    identical output. `list-keys -F` does not exist before 3.7, and 3.7
    prints a one-binding result to the status line instead of stdout.
@@ -84,7 +84,7 @@ docs/                  internals docs; demo.tape/demo.conf record demo.gif
     |---|---|
     | a `/bin/sh` command line (run-shell, popup command) | `sh_quote` |
     | a tmux command string (bind-key with one string, menu item command) | `tmux_quote` |
-    | anything tmux expands as a format (menu names/commands, run-shell) | `format_escape` (`#` → `##`) |
+    | anything tmux expands as a format: menu names and commands, `display-message` text, menu and popup titles, run-shell | `format_escape` (`#` → `##`) |
     | a tmux CLI argument that may end in `;` | `argv_escape` |
     | a key to `send-keys` | `key_hex` → `-H <hex>` for single ASCII characters |
 
@@ -93,24 +93,29 @@ docs/                  internals docs; demo.tape/demo.conf record demo.gif
 11. **Every key must reach tmux.** Anything that reads keys (the popup)
     forwards what it does not understand. Unknown input closes the popup and
     returns the client to the root table.
-12. **Plugin state must be undoable.** Anything `setup_auto` changes in the
+12. **whichkey.tmux talks to tmux through `queue`/`run_queue`**, reading
+    settings with one `read_settings` call: it runs on every tmux start and
+    reload. A failing command in a tmux sequence stops the rest, so queue
+    commands that commit a change (`prefix None`) after those that prepare
+    it, and restore the prefix first when undoing.
+13. **Plugin state must be undoable.** Anything `setup_auto` changes in the
     server (options, bindings, hooks) needs its reversal in `teardown_auto`
     and an entry in the state table of docs/architecture.md. Running
     `whichkey.tmux` twice must give the same result as once.
-13. **Supported tmux: 3.4+.** If you use a tmux feature, check
+14. **Supported tmux: 3.4+.** If you use a tmux feature, check
     docs/tmux-compatibility.md and let CI prove it on every version. Record
     any new version difference there, with its evidence.
 
 ### Tests
 
-14. **Pure logic gets a unit test; anything that talks to tmux gets an e2e
+15. **Pure logic gets a unit test; anything that talks to tmux gets an e2e
     check.** A bug fix gets the test that would have caught it.
-15. **In e2e, drive menus and popups with `typed` (raw bytes), not `key`.**
+16. **In e2e, drive menus and popups with `typed` (raw bytes), not `key`.**
     Before tmux 3.8 menus ignore `send-keys -K` keys, and tmux 3.4 popups do
     not get Escape from it.
-16. **Poll, don't sleep** (`wait_for`, `expect_fired`, `expect_drawn`), and
+17. **Poll, don't sleep** (`wait_for`, `expect_fired`, `expect_drawn`), and
     `mark` before acting.
-17. **e2e passing is not "it looks right".** `drawn` matches bytes even if
+18. **e2e passing is not "it looks right".** `drawn` matches bytes even if
     they scrolled away. For anything visual, run the Demo workflow and look
     at the screenshots.
 
@@ -159,5 +164,9 @@ docs/                  internals docs; demo.tape/demo.conf record demo.gif
 - `printf -v var ''` silently left stale values in place.
 - A note starting with `+` on a group rendered as `++name`.
 - A popup left open in one e2e test swallowed the keys of the next ones.
+- Messages and popup titles were sent without `format_escape`: tmux read
+  the user's regex or table name as a format.
+- `setup_auto` set `prefix None` before binding the key: a failed binding
+  would have left tmux without a prefix.
 - Guessing at a CI failure cost several runs; the per-server debug trace and
   `tmux -vv` log in the artifact found each cause in one read.

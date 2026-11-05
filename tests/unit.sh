@@ -138,6 +138,10 @@ for pair in 'fg=magenta,bold|\e[0;35;1m' 'fg=blue|\e[0;34m' 'bg=red dim|\e[0;41;
 	check "style_sgr ${pair%%|*}" "$want" "$out"
 done
 
+mkdir -p "$WORK/glob" && touch "$WORK/glob/bold" && (cd "$WORK/glob" && style_sgr out 'fg=red *' && printf '%s' "$out" >"$WORK/glob/out")
+printf -v want '%b' '\e[0;31m'
+check "style_sgr does not glob" "$want" "$(cat "$WORK/glob/out")"
+
 echo "-- tmux queries (fake tmux)"
 tmux() { printf 'a%s%sc d\n' "$WK_SEP" "$WK_SEP"; }
 read_formats client x '#{x}' y '#{y}' z '#{z}'
@@ -145,6 +149,9 @@ check "read_formats keeps empty fields" "a||c d" "$x|$y|$z"
 tmux() { printf '%s\n' 'a\037\037c d'; }
 read_formats client x '#{x}' y '#{y}' z '#{z}'
 check "read_formats: separator escaped by tmux < 3.7" "a||c d" "$x|$y|$z"
+tmux() { echo "$*" | grep -q -- ' -c ' && echo with-client || echo no-client; }
+read_formats '' x '#{x}'
+check "read_formats without a client" "no-client" "$x"
 
 # load_bindings: a cached default, a changed default, a new binding, a group.
 WK_TMUX_VERSION=9.9
@@ -174,12 +181,13 @@ check "binding_label: group note that has its own +" "+Git" "$out"
 WK_NOTES[3]="Git"
 binding_label out 3
 check "binding_label: group note" "+Git" "$out"
-binding_command out prefix g
-check "binding_command" "switch-client -T git" "$out"
-binding_command out prefix c
-check "binding_command: first line" "new-window" "$out"
-binding_command out prefix X
-check "binding_command: unbound key" "" "$out"
+list_bindings list prefix
+lookup_command out "$list" g
+check "lookup_command" "switch-client -T git" "$out"
+lookup_command out "$list" c
+check "lookup_command: first line" "new-window" "$out"
+lookup_command out "$list" X
+check "lookup_command: unbound key" "" "$out"
 
 # Before tmux 3.8, list-keys' plain output is parsed.
 plain='bind-key    -T prefix C-b     send-prefix
@@ -219,8 +227,8 @@ tmux() {
 }
 list_bindings out prefix
 check "list_bindings before 3.7 reads the plain output" "$want" "$out"
-binding_command out prefix H
-check "binding_command before 3.7" "resize-pane -L" "$out"
+lookup_command out "$out" H
+check "lookup_command before 3.7" "resize-pane -L" "$out"
 
 # tmux 3.7: every table is listed with -F and filtered.
 WK_TMUX_VERSION=3.7c
@@ -242,6 +250,89 @@ for v in '3.4 yes' '3.7c yes' '3.10 yes' '4.0 yes' '3.3a no' '2.9 no' 'next-3.9 
 	version_at_least "$1" 3 4 && r=yes || r=no
 	check "version_at_least $1 3.4" "$2" "$r"
 done
+unset -f tmux
+
+echo "-- whichkey.tmux (fake tmux)"
+# The fake server: answers display-message from F_* variables and list-keys
+# from F_LIST_<table>, and records every call in CALLS.
+fake_format() {
+	case $1 in
+	'#{version}') printf 3.8 ;;
+	'#{@whichkey-auto}') printf '%s' "$F_AUTO" ;;
+	'#{@whichkey-key}') printf '%s' "$F_KEY" ;;
+	'#{@whichkey-bound-key}') printf '%s' "$F_BOUND_KEY" ;;
+	'#{prefix}') printf '%s' "$F_PREFIX" ;;
+	'#{prefix2}') printf None ;;
+	'#{@whichkey-prefix}') printf '%s' "$F_SAVED_PREFIX" ;;
+	esac
+}
+tmux() {
+	local fmt piece out='' first=1 pieces list
+	CALLS+=("$*")
+	case $1 in
+	display-message)
+		fmt=${!#}
+		IFS=$WK_SEP read -r -a pieces <<<"$fmt"
+		for piece in "${pieces[@]}"; do
+			[ "$first" = 1 ] || out="$out$WK_SEP"
+			first=0
+			out="$out$(fake_format "$piece")"
+		done
+		printf '%s\n' "$out"
+		;;
+	list-keys)
+		list="F_LIST_${3//-/_}"
+		printf '%s\n' "${!list}"
+		;;
+	esac
+}
+# whichkey_load: run whichkey.tmux's main against the fake server.
+whichkey_load() {
+	CALLS=()
+	unset TABLE_prefix TABLE_root TABLE_copy_mode TABLE_copy_mode_vi
+	main
+}
+# call_with <text>: the recorded call containing <text>.
+call_with() {
+	local c
+	for c in "${CALLS[@]}"; do
+		case $c in *"$1"*) printf '%s' "$c" && return ;; esac
+	done
+}
+# before <a> <b> <text>: in <text>, <a> comes before <b>.
+before() {
+	case $3 in *"$1"*"$2"*) echo yes ;; *) echo no ;; esac
+}
+
+source "$ROOT/whichkey.tmux"
+warm_defaults_cache() { :; }
+F_LIST_prefix="C-b${WK_SEP}Send the prefix key${WK_SEP}send-prefix
+Space${WK_SEP}Show key bindings${WK_SEP}run-shell -b \"'$ROOT/scripts/menu.sh' '#{client_name}' '#{pane_id}' prefix\""
+F_LIST_root='' F_LIST_copy_mode='' F_LIST_copy_mode_vi=''
+
+F_AUTO=on F_KEY='' F_BOUND_KEY='' F_PREFIX=C-b F_SAVED_PREFIX=''
+whichkey_load
+check "load: at most 4 tmux calls" yes "$([ "${#CALLS[@]}" -le 4 ] && echo yes || echo "no (${#CALLS[@]})")"
+setup=$(call_with "prefix None")
+check "setup: prefix None only after the triggers are bound" yes \
+	"$(before "bind-key -T copy-mode-vi C-b" "set-option -g prefix None" "$setup")"
+check "setup: send-prefix replaced before prefix None" yes \
+	"$(before "send-keys C-b" "set-option -g prefix None" "$setup")"
+
+F_KEY=F1 F_BOUND_KEY=Space
+whichkey_load
+check "a changed @whichkey-key unbinds the old key" yes \
+	"$(before "unbind-key -T prefix Space" "bind-key -N Show key bindings F1" "$(call_with "F1")")"
+
+F_AUTO=off F_KEY='' F_BOUND_KEY='' F_PREFIX=None F_SAVED_PREFIX=C-b
+F_LIST_root="C-b${WK_SEP}${WK_SEP}switch-client -T prefix ; run-shell -b '/x/auto.sh'"
+F_LIST_prefix="C-b${WK_SEP}Send the prefix key${WK_SEP}send-keys C-b"
+whichkey_load
+teardown=$(call_with "set-option -g prefix C-b")
+check "teardown: prefix restored before anything else" yes \
+	"$(before "set-option -g prefix C-b" "unbind-key -T root C-b" "$teardown")"
+check "teardown: send-prefix restored" yes \
+	"$(before "unbind-key -T root C-b" "send-prefix" "$teardown")"
 unset -f tmux
 
 echo

@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Entry point: run by TPM, or by `run-shell /path/to/whichkey.tmux`.
+# Entry point: run by TPM, or by `run-shell /path/to/whichkey.tmux`, on
+# every config (re)load. Running it twice must give the same result as once.
+#
+# Every tmux call costs a few milliseconds and the plugin loads with tmux, so
+# settings are read in one call and changes are queued and sent in one call
+# (see queue). In a tmux command sequence a failing command stops the rest,
+# so commands that commit a change (prefix None) are queued after those that
+# prepare it: if a binding fails, the prefix is left alone.
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$CURRENT_DIR/scripts/lib"
@@ -23,40 +30,88 @@ PREFIX_TABLES="root copy-mode copy-mode-vi"
 # The options auto mode takes over.
 PREFIX_OPTIONS="prefix prefix2"
 
+QUEUE=()
+
+# queue <arg>...: add one tmux command to QUEUE.
+queue() {
+	local _arg
+	[ "${#QUEUE[@]}" -eq 0 ] || QUEUE+=(';')
+	for _arg in "$@"; do
+		# An argument ending in ";" would end the command.
+		argv_escape _arg "$_arg"
+		QUEUE+=("$_arg")
+	done
+}
+
+# run_queue: send QUEUE to tmux in one call, then empty it.
+run_queue() {
+	[ "${#QUEUE[@]}" -eq 0 ] || tmux "${QUEUE[@]}"
+	QUEUE=()
+}
+
+# read_settings: the tmux version and every option, in one call.
+read_settings() {
+	read_formats '' \
+		WK_TMUX_VERSION '#{version}' \
+		debug '#{@whichkey-debug}' \
+		auto '#{@whichkey-auto}' \
+		delay '#{@whichkey-delay}' \
+		menu_key '#{@whichkey-key}' \
+		root_key '#{@whichkey-root-key}' \
+		bound_key '#{@whichkey-bound-key}' \
+		bound_root_key '#{@whichkey-bound-root-key}' \
+		current_prefix '#{prefix}' \
+		current_prefix2 '#{prefix2}' \
+		saved_prefix '#{@whichkey-prefix}' \
+		saved_prefix2 '#{@whichkey-prefix2}'
+	menu_key=${menu_key:-$WK_DEFAULT_KEY}
+	delay=${delay:-$WK_DEFAULT_DELAY}
+}
+
+# table_command <var> <table> <key>: the command bound to <key> in <table>,
+# listing each table at most once per load.
+table_command() {
+	local _cache="TABLE_${2//-/_}"
+	if [ -z "${!_cache+set}" ]; then
+		list_bindings "$_cache" "$2"
+	fi
+	lookup_command "$1" "${!_cache}" "$3"
+}
+
 # bind_menu_keys: @whichkey-key in the prefix table (and @whichkey-root-key,
-# if set, in the root table) opens the catalog menu.
+# if set, in the root table) opens the catalog menu. A key that opened it
+# before but no longer should is unbound.
 bind_menu_keys() {
-	local menu open key root_key
+	local menu open
 	sh_quote menu "$CURRENT_DIR/scripts/menu.sh"
 	format_escape menu "$menu"
 	tmux_quote open "$menu '#{client_name}' '#{pane_id}' prefix"
 	open="run-shell -b $open"
-	key=$(get_option @whichkey-key "$WK_DEFAULT_KEY")
-	root_key=$(get_option @whichkey-root-key "")
 
-	tmux bind-key -N "Show key bindings" "$key" "$open"
+	if [ -n "$bound_key" ] && [ "$bound_key" != "$menu_key" ]; then
+		unbind_menu_key prefix "$bound_key"
+	fi
+	queue bind-key -N "Show key bindings" "$menu_key" "$open"
+	queue set-option -g @whichkey-bound-key "$menu_key"
+
+	if [ -n "$bound_root_key" ] && [ "$bound_root_key" != "$root_key" ]; then
+		unbind_menu_key root "$bound_root_key"
+	fi
 	if [ -n "$root_key" ]; then
-		tmux bind-key -n -N "Show key bindings" "$root_key" "$open"
+		queue bind-key -n -N "Show key bindings" "$root_key" "$open"
+		queue set-option -g @whichkey-bound-root-key "$root_key"
+	else
+		queue set-option -gu @whichkey-bound-root-key
 	fi
 }
 
-# user_prefix <var> <option>: the key the user configured for <option>
-# (prefix or prefix2), saved as @whichkey-<option>. While auto mode is on the
-# option is None, so on a config reload fall back to the saved key. If the
-# config now sets a different key, give the old one back first.
-user_prefix() {
-	local _key _saved
-	_key=$(tmux show-option -gv "$2")
-	_saved=$(get_option "@whichkey-$2" "")
-	if [ "$_key" = None ]; then
-		_key=$_saved
-	else
-		if [ -n "$_saved" ] && [ "$_saved" != "$_key" ]; then
-			release_key "$_saved" "$2"
-		fi
-		tmux set-option -g "@whichkey-$2" "$_key"
-	fi
-	printf -v "$1" '%s' "$_key"
+# unbind_menu_key <table> <key>: unbind <key> if it still opens the menu.
+unbind_menu_key() {
+	local command
+	table_command command "$1" "$2"
+	case $command in
+	*menu.sh*) queue unbind-key -T "$1" "$2" ;;
+	esac
 }
 
 # prefix_trigger <var> <delay-ms>: what a prefix key runs in auto mode:
@@ -74,16 +129,17 @@ prefix_trigger() {
 }
 
 # claim_key <key> <option> <trigger>: bind <key> to the trigger where tmux
-# would have handled it as <option>.
+# would have handled it as <option>, and replace its send-prefix binding.
 claim_key() {
 	local table command send_prefix
 	for table in $PREFIX_TABLES; do
-		tmux bind-key -T "$table" "$1" "$3"
+		queue bind-key -T "$table" "$1" "$3"
 	done
-	binding_command command prefix "$1"
+	table_command command prefix "$1"
 	send_prefix_command send_prefix "$2"
 	if [ "$command" = "$send_prefix" ]; then
-		bind_prefix_standin "$1"
+		# send-prefix sends the option, which is about to be None.
+		queue bind-key -N "Send the prefix key" -T prefix "$1" send-keys "$1"
 	fi
 }
 
@@ -91,16 +147,16 @@ claim_key() {
 release_key() {
 	local table command send_prefix
 	for table in $PREFIX_TABLES; do
-		binding_command command "$table" "$1"
+		table_command command "$table" "$1"
 		case $command in
-		*auto.sh*) tmux unbind-key -T "$table" "$1" ;;
+		*auto.sh*) queue unbind-key -T "$table" "$1" ;;
 		esac
 	done
-	binding_command command prefix "$1"
+	table_command command prefix "$1"
 	if is_prefix_standin "$1" "$command"; then
 		send_prefix_command send_prefix "$2"
 		# shellcheck disable=SC2086 # "send-prefix -2" is two arguments
-		tmux bind-key -N "Send the prefix key" -T prefix "$1" $send_prefix
+		queue bind-key -N "Send the prefix key" -T prefix "$1" $send_prefix
 	fi
 }
 
@@ -108,59 +164,66 @@ release_key() {
 # there is no event to hang a timer on. Instead, turn the prefix options off
 # and bind their keys ourselves.
 setup_auto() {
-	local trigger option key
-	prefix_trigger trigger "$(get_option @whichkey-delay "$WK_DEFAULT_DELAY")"
+	local trigger option current saved key claimed=''
+	prefix_trigger trigger "$delay"
 	for option in $PREFIX_OPTIONS; do
-		user_prefix key "$option"
+		current="current_$option" saved="saved_$option"
+		current=${!current} saved=${!saved}
+		if [ "$current" = None ]; then
+			# Already ours (a reload): use the key we saved.
+			key=$saved
+		else
+			# The config set the key. If it changed, give the old one back.
+			if [ -n "$saved" ] && [ "$saved" != "$current" ]; then
+				release_key "$saved" "$option"
+			fi
+			key=$current
+			queue set-option -g "@whichkey-$option" "$key"
+		fi
 		[ -n "$key" ] || continue
-		tmux set-option -g "$option" None
 		claim_key "$key" "$option" "$trigger"
+		claimed="$claimed $option"
 	done
-	tmux set-hook -g "$WK_DETACH_HOOK" "set-option -gqu '@whichkey-seq-#{hook_client}'"
+	# Only now, after every binding above succeeded.
+	for option in $claimed; do
+		queue set-option -g "$option" None
+	done
+	queue set-hook -g "$WK_DETACH_HOOK" "set-option -gqu '@whichkey-seq-#{hook_client}'"
+	run_queue
 }
 
 # Undo setup_auto after the option is turned off and the config reloaded.
 teardown_auto() {
-	local option key
+	local option current saved
 	for option in $PREFIX_OPTIONS; do
-		key=$(get_option "@whichkey-$option" "")
-		[ -n "$key" ] && [ "$(tmux show-option -gv "$option")" = None ] || continue
-		tmux set-option -g "$option" "$key"
-		release_key "$key" "$option"
+		current="current_$option" saved="saved_$option"
+		current=${!current} saved=${!saved}
+		[ -n "$saved" ] && [ "$current" = None ] || continue
+		# The prefix first: whatever happens next, it works again.
+		queue set-option -g "$option" "$saved"
+		release_key "$saved" "$option"
 	done
-	tmux set-hook -gu "$WK_DETACH_HOOK" 2>/dev/null
+	[ "${#QUEUE[@]}" -eq 0 ] || queue set-hook -gu "$WK_DETACH_HOOK"
+	run_queue
 }
 
 # apply_debug_option: start or stop the debug log, starting it afresh once it
-# passes 10 MB.
+# passes 10 MB. The log holds the commands of the user's bindings, so only
+# the user can read it.
 apply_debug_option() {
-	case $(get_option @whichkey-debug "$WK_DEFAULT_DEBUG") in
+	case $debug in
 	on | yes | 1)
 		mkdir -p "$WK_DEBUG_DIR"
 		if [ "$(wc -c <"$WK_DEBUG_LOG" 2>/dev/null || echo 0)" -gt 10485760 ]; then
-			: >"$WK_DEBUG_LOG"
+			rm -f "$WK_DEBUG_LOG"
 		fi
-		: >"$WK_DEBUG_FLAG"
+		(umask 077 && : >>"$WK_DEBUG_LOG" && : >"$WK_DEBUG_FLAG")
+		chmod 600 "$WK_DEBUG_LOG"
 		;;
 	*) rm -f "$WK_DEBUG_FLAG" ;;
 	esac
 	# shellcheck disable=SC2119 # no arguments to log
 	debug_init
-}
-
-main() {
-	apply_debug_option
-	WK_TMUX_VERSION=$(tmux display-message -p '#{version}')
-	if ! version_at_least "$WK_TMUX_VERSION" 3 4; then
-		tmux display-message "whichkey-tmux: requires tmux 3.4 or newer"
-		return
-	fi
-	bind_menu_keys
-	case $(get_option @whichkey-auto "$WK_DEFAULT_AUTO") in
-	on | yes | 1) setup_auto ;;
-	*) teardown_auto ;;
-	esac
-	warm_defaults_cache
 }
 
 # warm_defaults_cache: read tmux's built-in bindings now, in the background,
@@ -175,4 +238,24 @@ warm_defaults_cache() {
 	) >/dev/null 2>&1 &
 }
 
-main
+main() {
+	read_settings
+	apply_debug_option
+	if ! version_at_least "$WK_TMUX_VERSION" 3 4; then
+		tmux display-message "whichkey-tmux: requires tmux 3.4 or newer"
+		return
+	fi
+	# Two calls: a bad @whichkey-key must not stop auto mode, and the other
+	# way round.
+	bind_menu_keys
+	run_queue
+	case ${auto:-$WK_DEFAULT_AUTO} in
+	on | yes | 1) setup_auto ;;
+	*) teardown_auto ;;
+	esac
+	warm_defaults_cache
+}
+
+# Run when executed (TPM, run-shell); tests source this file for its
+# functions.
+[ "${BASH_SOURCE[0]}" != "$0" ] || main

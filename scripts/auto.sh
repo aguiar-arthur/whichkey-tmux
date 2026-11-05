@@ -137,15 +137,17 @@ render_grid() {
 # show_popup <content-file>: draw the grid, if nothing happened while it was
 # being built. popup.sh removes the file once it has shown it.
 show_popup() {
-	local now popup_width
+	local now popup_width title
 	# A key pressed while we were building the grid already ran its binding.
 	if ! still_waiting now || [ "$now" != "$table" ]; then
 		rm -f "$1"
 		return
 	fi
 	popup_width=$((COLS * CELL + (COLS - 1) * GAP + 4))
+	# The title is a format: a "#" in the table name must stay literal.
+	format_escape title " $table "
 	[ "$popup_width" -le "$width" ] || popup_width=$width
-	tmux display-popup -c "$client" -t "$pane" -E -b "$border_lines" -T " $table " \
+	tmux display-popup -c "$client" -t "$pane" -E -b "$border_lines" -T "$title" \
 		-x C -y S -w "$popup_width" -h $((ROWS + 2)) \
 		"$CURRENT_DIR/popup.sh" "$client" "$pane" "$table" "$1" \
 		"$seq" "$delay" "$GROUP_KEYS" ||

@@ -150,6 +150,8 @@ terminal.
 **Decision.** `@whichkey-debug on` makes `whichkey.tmux` create
 `~/.cache/whichkey-tmux/debug.on`; every script checks for that file first
 thing (no tmux call) and, if present, sends `set -x` output to `debug.log`.
+The log is created with mode 600: it shows the commands of the user's
+bindings, which can hold tokens or paths.
 **Rejected.** An environment variable set with `set-environment -g`: it
 works too, but adds server state that must be cleaned up, while the file is
 checked with a single `stat`.
@@ -164,7 +166,18 @@ runs in CI against every tmux release from 3.4. Menus and popups are driven
 by typing raw bytes, because before 3.8 menus ignore `send-keys -K` keys and
 3.4 popups do not get Escape from it.
 
-## 16. No releases
+## 16. Load in few tmux calls, ordered for safety
+
+**Problem.** `whichkey.tmux` runs on every tmux start and config reload, and
+each tmux call costs milliseconds (~200 ms with 17 calls). It also changes
+the prefix: a half-applied change could leave tmux without one.
+**Decision.** Read every setting with one `display-message`, list each key
+table at most once, and send the changes as one command sequence per
+concern (menu keys, auto mode). tmux stops a sequence at the first failing
+command, so `setup_auto` queues `prefix None` after every binding it needs,
+and `teardown_auto` restores the prefix first.
+
+## 17. No releases
 
 The project ships from `main`; there are no tags, GitHub releases or
 changelog. TPM installs `main`. CI on every push keeps it usable, and bug

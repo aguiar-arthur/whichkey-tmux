@@ -36,8 +36,10 @@ colour_sgr() {
 # "fg=magenta,bold" or "fg=#bd93f9 italics". Parts it does not understand
 # are ignored; an empty or "default" style gives the plain reset.
 style_sgr() {
-	local _part _code _params=0
-	for _part in ${2//,/ }; do
+	local _part _parts _code _params=0
+	# read -a, not an unquoted expansion: a "*" in the style must not glob.
+	IFS=', ' read -r -a _parts <<<"$2"
+	for _part in "${_parts[@]}"; do
 		_code=
 		case $_part in
 		fg=*) colour_sgr _code "${_part#fg=}" 30 ;;

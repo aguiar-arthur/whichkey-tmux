@@ -7,15 +7,9 @@
 # fields (e.g. a binding without a note) survive `read`.
 WK_SEP=$'\x1f'
 
-# get_option <name> <default>: print a global option, or <default> if unset.
-get_option() {
-	local value
-	value=$(tmux show-option -gqv "$1")
-	printf '%s' "${value:-$2}"
-}
-
 # read_formats <client> <var> <format> [<var> <format>...]: expand every
-# format for <client> in one round-trip and assign each result to its <var>.
+# format for <client> (empty: no client) in one round-trip and assign each
+# result to its <var>.
 read_formats() {
 	local _client=$1 _format='' _vars=() _values=() _i _out
 	shift
@@ -24,7 +18,11 @@ read_formats() {
 		_format=$_format${_format:+$WK_SEP}$2
 		shift 2
 	done
-	_out=$(tmux display-message -p -c "$_client" "$_format")
+	if [ -n "$_client" ]; then
+		_out=$(tmux display-message -p -c "$_client" "$_format")
+	else
+		_out=$(tmux display-message -p "$_format")
+	fi
 	# Before tmux 3.7, display-message -p escapes control characters, so the
 	# separator arrives as the text \037.
 	_out=${_out//\\037/$WK_SEP}

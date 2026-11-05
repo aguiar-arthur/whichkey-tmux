@@ -13,7 +13,7 @@ source for that version), **measured** (reproduced locally on tmux 3.8).
 | Quirk | Versions | Evidence | Handled in |
 |---|---|---|---|
 | `list-keys -F` does not exist ("unknown flag -F") | 3.4–3.6 | CI | `list_bindings` parses the plain output |
-| `list-keys` shows the result in the status line instead of printing it when it has exactly one binding (a one-key table, or `list-keys -T t <key>`) | 3.7 | source (`cmd-list-keys.c`: `n == 1`), CI | `list_bindings` lists all tables with `-F` and filters; `binding_command` scans the table |
+| `list-keys` shows the result in the status line instead of printing it when it has exactly one binding (a one-key table, or `list-keys -T t <key>`) | 3.7 | source (`cmd-list-keys.c`: `n == 1`), CI | `list_bindings` lists all tables with `-F` and filters; `lookup_command` looks the key up in the whole table |
 | `display-message -p` prints control characters escaped, so `\x1f` arrives as the text `\037` | 3.4–3.6 | CI | `read_formats` turns `\037` back into `WK_SEP` |
 | Menus compare an item's key with the pressed key including flags, so keys injected with `send-keys -K` (flag `KEYC_SENT`) never choose an item; typed keys do | before 3.8 | source (`menu.c`: 3.4 compares `event->key` as is, 3.8 masks flags) | tests type menu keys instead |
 | A popup does not receive `Escape` from `send-keys -K` | 3.4 | CI (server log) | tests type Escape |
@@ -28,6 +28,9 @@ source for that version), **measured** (reproduced locally on tmux 3.8).
 | `display-menu` item names and commands are formats: `#` must be `##` | all | measured | `format_escape` |
 | A menu item whose name starts with `-` is shown disabled; an empty name is a separator | all | source | labels starting with `-` get a leading space; labels are never empty |
 | The tmux CLI treats an argument ending in `;` as a command separator | all | measured | `argv_escape` |
+| In a command sequence (`tmux a \; b`), a failing command stops the ones after it | all | measured | `whichkey.tmux` orders its queue |
+| `display-message` text and `display-menu`/`display-popup` titles are formats | all | measured | `format_escape` |
+| `#{prefix}` and other options can be read as formats during config load | 3.8 | measured, CI | `read_settings` |
 
 ### What tmux sends a popup
 

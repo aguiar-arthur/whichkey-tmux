@@ -10,6 +10,8 @@ WK_DEBUG_LOG="$WK_DEBUG_DIR/debug.log"
 # the log. Call first thing, with the script's arguments.
 debug_init() {
 	[ -e "$WK_DEBUG_FLAG" ] || return 0
+	# The trace shows the commands of the user's bindings: keep it private.
+	[ -e "$WK_DEBUG_LOG" ] || (umask 077 && : >>"$WK_DEBUG_LOG")
 	exec 2>>"$WK_DEBUG_LOG"
 	printf '\n== %s %s %s\n' "$(date '+%F %T')" "${0##*/}" "$*" >&2
 	PS4='+ ${BASH_SOURCE[0]##*/}:${LINENO} ${FUNCNAME[0]:-main}: '

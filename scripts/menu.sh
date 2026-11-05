@@ -53,6 +53,8 @@ read_settings() {
 	if [ -n "$exclude" ]; then
 		[[ "" =~ $exclude ]]
 		if [ "$?" -eq 2 ]; then
+			# Messages are formats: show the regex as typed.
+			format_escape exclude "$exclude"
 			tmux display-message -c "$client" "whichkey: @whichkey-exclude is not a valid regex: $exclude"
 			exclude=
 		fi
@@ -211,6 +213,7 @@ main() {
 	build_items
 	order_items
 	if [ "${#ORDER[@]}" -eq 0 ]; then
+		format_escape table "$table"
 		tmux display-message -c "$client" "whichkey: no bindings in table '$table'"
 		return
 	fi

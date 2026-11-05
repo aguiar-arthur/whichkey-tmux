@@ -90,14 +90,12 @@ parse_list_keys() {
 	printf -v "$1" '%s' "${_out%$'\n'}"
 }
 
-# binding_command <var> <table> <key>: the command bound to <key> in
-# <table>, or empty. Scans the table rather than asking for the key with
-# `list-keys -T <table> <key>`: tmux 3.7 shows a single result in the
-# status line instead of printing it.
-binding_command() {
-	local _list _rest
-	list_bindings _list "$2"
-	_list=$'\n'$_list
+# lookup_command <var> <list> <key>: the command bound to <key> in <list>
+# (list_bindings output), or empty. Looking the key up in the whole table,
+# rather than with `list-keys -T <table> <key>`: tmux 3.7 shows a single
+# result in the status line instead of printing it.
+lookup_command() {
+	local _list=$'\n'$2 _rest
 	case $_list in
 	*$'\n'"$3$WK_SEP"*)
 		_rest=${_list#*$'\n'"$3$WK_SEP"}

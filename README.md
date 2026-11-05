@@ -118,7 +118,9 @@ a pause on the prefix, and leaves `tmux.conf` as the single source of truth.
 that sets the prefix.
 
 **Something else is wrong.** `set -g @whichkey-debug on`, reload, reproduce,
-and look at (or attach to an issue) `~/.cache/whichkey-tmux/debug.log`.
+and look at `~/.cache/whichkey-tmux/debug.log`. It contains the commands of
+your bindings (readable only by you); check it for anything private before
+attaching it to an issue.
 
 ## Uninstall
 

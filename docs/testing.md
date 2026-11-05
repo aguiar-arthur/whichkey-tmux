@@ -32,6 +32,12 @@ Run them under bash 3.2 too: `/bin/bash tests/unit.sh` on macOS. CI does.
 Add a unit test for any pure logic: quoting, key decoding, layout, styles,
 parsing.
 
+`whichkey.tmux` runs `main` only when executed, so the tests source it and
+call `main` against a fake server: `fake_format` answers `display-message`
+from `F_*` variables, `list-keys` answers from `F_LIST_<table>`, and every
+call is recorded in `CALLS`. The checks look at the order of commands inside
+a call (`before`, `call_with`) and at the number of calls.
+
 ## End-to-end tests (tests/e2e.sh)
 
 ### Setup
