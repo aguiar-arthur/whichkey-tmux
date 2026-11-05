@@ -142,7 +142,7 @@ How it is built and why: [docs/architecture.md](docs/architecture.md),
 [docs/decisions.md](docs/decisions.md),
 [docs/tmux-compatibility.md](docs/tmux-compatibility.md),
 [docs/testing.md](docs/testing.md). Rules for changes, for people and AI
-agents: [AGENTS.md](AGENTS.md). See also [CONTRIBUTING.md](CONTRIBUTING.md).
+agents: [CLAUDE.md](CLAUDE.md). See also [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

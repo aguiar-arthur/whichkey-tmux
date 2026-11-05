@@ -21,9 +21,9 @@ with the system bash 3.2.
 
 ## Before you change something
 
-- [AGENTS.md](AGENTS.md): the rules (bash 3.2, `printf -v` helpers,
+- [CLAUDE.md](CLAUDE.md): the rules (bash 3.2, `printf -v` helpers,
   quoting layers, how to read bindings) and the definition of done. Written
-  for AI agents, and just as useful for people.
+  for Claude Code, and just as useful for people.
 - [docs/architecture.md](docs/architecture.md): how it fits together.
 - [docs/decisions.md](docs/decisions.md): why, and what was rejected.
 - [docs/tmux-compatibility.md](docs/tmux-compatibility.md): what differs
