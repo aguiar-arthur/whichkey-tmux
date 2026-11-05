@@ -140,8 +140,36 @@ and record it in [tmux-compatibility.md](tmux-compatibility.md).
 
 ## Demo (.github/workflows/demo.yml)
 
-`docs/demo.tape` (vhs) records `docs/demo.gif` with `docs/demo.conf`. Run
-the "Demo" workflow by hand after a visible change, download the `demo`
-artifact, look at `shots/*.png` (popup, group, catalog), and commit the GIF
-if they are right. The screenshots are how the missing first popup row was
-found: the e2e tests passed.
+The GIF at the top of the README, `docs/demo.gif`, is recorded with
+[vhs](https://github.com/charmbracelet/vhs), which plays a script of
+keystrokes in a terminal and writes a GIF.
+
+| File | Role |
+|---|---|
+| `docs/demo.tape` | the script: start tmux, `Ctrl+B` and wait (popup), `\|` (split), `Ctrl+B w` (group popup), `Ctrl+B Space` (catalog), arrows; `Screenshot` lines at the popup, the group and the catalog |
+| `docs/demo.conf` | a tmux config for the demo only: a few noted bindings, a `+window` group, Dracula colours, a plain `$` prompt |
+| `.github/workflows/demo.yml` | runs the tape on Ubuntu (`workflow_dispatch` only) and uploads the GIF and screenshots as the `demo` artifact |
+
+Record it after any visible change:
+
+```sh
+gh workflow run demo.yml
+gh run watch "$(gh run list --workflow demo.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+gh run download "$(gh run list --workflow demo.yml --limit 1 --json databaseId -q '.[0].databaseId')" -n demo -D /tmp/demo
+```
+
+Then look at `/tmp/demo/shots/popup.png`, `group.png` and `catalog.png`. If
+they are right, copy `/tmp/demo/demo.gif` to `docs/demo.gif` and commit it.
+Locally, with vhs installed (`brew install vhs`), `vhs docs/demo.tape` from
+the repository root does the same.
+
+Notes:
+
+- **Look at the screenshots.** They found three bugs the e2e tests passed:
+  the popup's first row scrolled out of sight, a group noted `+window` showed
+  as `++window`, and the first popup came too late to be recorded.
+- CI records with Ubuntu's tmux (3.4 on `ubuntu-latest`), so `demo.conf` must
+  not use newer options such as `theme`.
+- `docs/shots/` is ignored by git; only the GIF is committed.
+- Changing what the tape shows (keys, the group, timing) means changing
+  `demo.conf` and `demo.tape` together.
