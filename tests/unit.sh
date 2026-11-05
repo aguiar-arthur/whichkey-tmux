@@ -168,6 +168,12 @@ binding_label out 1
 check "binding_label: command without a note" "kill-pane" "$out"
 binding_label out 3
 check "binding_label: group without a note" "+git" "$out"
+WK_NOTES[3]="+Git"
+binding_label out 3
+check "binding_label: group note that has its own +" "+Git" "$out"
+WK_NOTES[3]="Git"
+binding_label out 3
+check "binding_label: group note" "+Git" "$out"
 binding_command out prefix g
 check "binding_command" "switch-client -T git" "$out"
 binding_command out prefix c
@@ -185,11 +191,12 @@ bind-key    -T prefix -       delete-buffer
 bind-key    -T prefix g       switch-client -T grp
 bind-key    -T prefix x       display-message "a  b"
 bind-key    -T prefix "M-{"   send-keys -X previous-paragraph'
+# list-keys -N lists the bindings with a note in list-keys' order.
 notes='C-b     Send the prefix key
 #       A note
 ;       Last pane
-H       Resize left
-\       Back slash'
+\       Back slash
+H       Resize left'
 parse_list_keys out "$plain" "$notes"
 want="C-b${WK_SEP}Send the prefix key${WK_SEP}send-prefix
 #${WK_SEP}A note${WK_SEP}display-message hi

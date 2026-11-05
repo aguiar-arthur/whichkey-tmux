@@ -33,8 +33,9 @@ group_keys=$7
 # keeps newlines in the grid working.
 show_content() {
 	stty raw -echo opost min 1 time 0
-	printf '\e[?25l'
-	cat "$content"
+	# No newline after the last row: at the bottom of the popup it would
+	# scroll the first row out of sight.
+	printf '\e[?25l%s' "$(<"$content")"
 	rm -f "$content"
 }
 

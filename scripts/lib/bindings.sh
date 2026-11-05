@@ -56,12 +56,15 @@ list_bindings() {
 # list-keys escapes punctuation keys with a backslash (\; \#) or quotes
 # them ("M-{"); the -N output does not.
 parse_list_keys() {
-	local _line _key _command _note _rest _notes _out=''
-	# Index the notes as "\n<key>SEP<note>" so a key can be looked up with a
-	# pattern; a key is a single word, so `read` splits it off the note.
-	_notes=$'\n'
+	local _line _key _command _note _out='' _note_keys=() _notes=() _j=0
+	# list-keys -N lists the bindings that have a note, in the same order as
+	# list-keys: walk both together. A key is a single word, so `read`
+	# splits it off the note.
 	while IFS=' ' read -r _key _note; do
-		[ -z "$_key" ] || _notes="$_notes$_key$WK_SEP$_note"$'\n'
+		[ -z "$_key" ] || {
+			_note_keys+=("$_key")
+			_notes+=("$_note")
+		}
 	done <<<"$3"
 	while IFS= read -r _line; do
 		case $_line in bind-key*-T\ *) ;; *) continue ;; esac
@@ -78,13 +81,11 @@ parse_list_keys() {
 		\"?*\") _key=${_key:1:${#_key}-2} ;;
 		esac
 		_note=''
-		case $_notes in
-		*$'\n'"$_key$WK_SEP"*)
-			_rest=${_notes#*$'\n'"$_key$WK_SEP"}
-			_note=${_rest%%$'\n'*}
-			;;
-		esac
-		_out="$_out$_key$WK_SEP$_note$WK_SEP$_command"$'\n'
+		if [ "${_note_keys[$_j]}" = "$_key" ]; then
+			_note=${_notes[$_j]}
+			_j=$((_j + 1))
+		fi
+		_out+="$_key$WK_SEP$_note$WK_SEP$_command"$'\n'
 	done <<<"$2"
 	printf -v "$1" '%s' "${_out%$'\n'}"
 }
@@ -164,10 +165,12 @@ $_line
 }
 
 # binding_label <var> <index>: what to call a binding: its note, else its
-# command. Groups get a "+" and fall back to the table name.
+# command. Groups get a "+" (unless the note has one) and fall back to the
+# table name.
 binding_label() {
 	if [ -n "${WK_GROUP[$2]}" ]; then
-		printf -v "$1" '+%s' "${WK_NOTES[$2]:-${WK_GROUP[$2]}}"
+		printf -v "$1" '+%s' "${WK_NOTES[$2]#+}"
+		[ -n "${WK_NOTES[$2]}" ] || printf -v "$1" '+%s' "${WK_GROUP[$2]}"
 	else
 		printf -v "$1" '%s' "${WK_NOTES[$2]:-${WK_COMMANDS[$2]}}"
 	fi

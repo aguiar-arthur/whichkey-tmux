@@ -160,6 +160,19 @@ main() {
 	on | yes | 1) setup_auto ;;
 	*) teardown_auto ;;
 	esac
+	warm_defaults_cache
+}
+
+# warm_defaults_cache: read tmux's built-in bindings now, in the background,
+# so the first popup or menu after installing (or upgrading tmux) does not
+# wait for it.
+warm_defaults_cache() {
+	(
+		local table defaults
+		for table in prefix root copy-mode copy-mode-vi; do
+			load_defaults defaults "$table"
+		done
+	) >/dev/null 2>&1 &
 }
 
 main
