@@ -18,6 +18,15 @@ make test   # tests/unit.sh and tests/e2e.sh
 CI runs the same on Linux with every tmux release from 3.4, and on macOS
 with the system bash 3.2.
 
+Two variables help when something only breaks on another tmux:
+
+- `WHICHKEY_TMUX_LIST=all` or `=plain` makes a current tmux read bindings
+  the way tmux 3.7 or 3.4 to 3.6 have to (see `list_bindings`), so
+  `WHICHKEY_TMUX_LIST=plain make e2e` covers the old code path locally.
+- `E2E_WORK=<dir> make e2e` keeps the test's files in `<dir>`: client
+  output, the plugin's debug trace per server, and tmux's own server log.
+  CI uploads them as an artifact when e2e fails.
+
 ## Code layout
 
 ```
@@ -49,6 +58,9 @@ docs/demo.tape       records docs/demo.gif (the "Demo" workflow runs it)
   first argument with `printf -v`, and their locals start with `_` so they
   never shadow the caller's variable. Script steps pass arrays on in
   UPPERCASE globals, since bash cannot return arrays.
+- **Drive menus and popups by typing in tests.** Before tmux 3.8, menus
+  ignore keys from `send-keys -K`, and tmux 3.4 popups do not get Escape
+  from it; `typed` in `tests/e2e.sh` writes real bytes instead.
 - **Every key must reach tmux.** Anything that reads keys (the popup) has to
   forward what it does not understand rather than swallow it.
 - New behaviour gets a test: a unit test for pure logic, an e2e check for
