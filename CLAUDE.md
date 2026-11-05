@@ -2,9 +2,10 @@
 
 Guide for Claude Code (and humans) working on whichkey-tmux: a
 which-key plugin for tmux, in bash. It shows a catalog menu of key bindings
-on `prefix Space` and, in auto mode, a popup of the user's bindings after a
-pause on the prefix. It reads the live bindings from tmux every time; it has
-no config of its own and no build step.
+on `prefix Space`, a search that filters them as you type and, in auto mode,
+a popup of the user's bindings after a pause on the prefix. It reads the
+live bindings from tmux every time; it has no config of its own and no build
+step. `scripts/doctor.sh` checks a running setup.
 
 ## Read first
 
@@ -23,10 +24,11 @@ make lint                         # shellcheck + shfmt -d; must be clean
 make fmt                          # shfmt -w
 make unit                         # tests/unit.sh, < 1 s
 /bin/bash tests/unit.sh           # same under bash 3.2 (macOS)
-make e2e                          # tests/e2e.sh, ~20 s, needs tmux 3.4+ and python3
+make e2e                          # tests/e2e.sh, ~30 s, needs tmux 3.4+ and python3
 WHICHKEY_TMUX_LIST=plain make e2e # e2e with the tmux 3.4-3.6 way of reading bindings
 WHICHKEY_TMUX_LIST=all make e2e   # ... and the tmux 3.7 way
 E2E_WORK=/tmp/e2e make e2e        # keep logs, plugin trace and tmux -vv logs in /tmp/e2e
+scripts/doctor.sh                 # health check of the tmux you are in (read-only)
 ```
 
 The tests use a private server (`tmux -L whichkey-test-<pid>`) and a private
@@ -34,12 +36,16 @@ cache directory. They never touch the user's tmux server or `~/.cache`.
 
 ## Map
 
-```
+```text
 whichkey.tmux          entry point; run on every config load; must be idempotent
 scripts/menu.sh        catalog menu (display-menu) for one table and page
 scripts/auto.sh        after the prefix delay: decide, lay out the grid, open the popup
 scripts/popup.sh       inside the popup: draw, read one key, forward it to tmux
+scripts/search.sh      collect bindings of every reachable table, open the search popup
+scripts/search-popup.sh  inside the search: prompt, filtered list, press the chosen key
+scripts/doctor.sh      read-only health check, run by hand
 scripts/lib/*.sh       sourced libraries (see docs/architecture.md for each)
+examples/starter.conf  noted groups for users to copy; e2e loads it
 tests/unit.sh          lib/ functions with a fake tmux()
 tests/e2e.sh           real server + clients on pseudo-terminals (tests/pty_run.py)
 docs/                  internals docs; demo.tape/demo.conf record demo.gif
@@ -92,7 +98,10 @@ docs/                  internals docs; demo.tape/demo.conf record demo.gif
     (see `menu_command`, `auto_command`).
 11. **Every key must reach tmux.** Anything that reads keys (the popup)
     forwards what it does not understand. Unknown input closes the popup and
-    returns the client to the root table.
+    returns the client to the root table. The popup takes a key for itself
+    (Backspace to go back) only when the table does not bind it. Read keys
+    with `read_key` (input.sh), which reads exactly one key even when several
+    arrive together; press them with `press_args` (keys.sh).
 12. **whichkey.tmux talks to tmux through `queue`/`run_queue`**, reading
     settings with one `read_settings` call: it runs on every tmux start and
     reload. A failing command in a tmux sequence stops the rest, so queue
@@ -173,3 +182,13 @@ docs/                  internals docs; demo.tape/demo.conf record demo.gif
   would have left tmux without a prefix.
 - Guessing at a CI failure cost several runs; the per-server debug trace and
   `tmux -vv` log in the artifact found each cause in one read.
+- `read_key` read "the rest" of an escape sequence with one 16-byte `dd`:
+  two arrows typed together became one undecodable key, read as Escape,
+  and the search closed. It now reads only the bytes of one key. Found by
+  running the script in a private tmux pane and capturing it, not by e2e.
+- `"$key_sgr›"`: bash 3.2 took bytes of `›` as part of the variable name.
+  Brace variables next to non-ASCII text: `"${key_sgr}›"`.
+- tmux draws a popup's border and title before the script inside sets raw
+  input: an e2e test that waits for the title and types `\r` sends `\n`,
+  and a typed `\177` is eaten as "erase". Wait for something the script
+  draws (the popup's grid, the search's hints line).

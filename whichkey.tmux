@@ -60,11 +60,14 @@ read_settings() {
 		root_key '#{@whichkey-root-key}' \
 		bound_key '#{@whichkey-bound-key}' \
 		bound_root_key '#{@whichkey-bound-root-key}' \
+		search_key '#{@whichkey-search-key}' \
+		bound_search_key '#{@whichkey-bound-search-key}' \
 		current_prefix '#{prefix}' \
 		current_prefix2 '#{prefix2}' \
 		saved_prefix '#{@whichkey-prefix}' \
 		saved_prefix2 '#{@whichkey-prefix2}'
 	menu_key=${menu_key:-$WK_DEFAULT_KEY}
+	search_key=${search_key:-$WK_DEFAULT_SEARCH_KEY}
 	delay=${delay:-$WK_DEFAULT_DELAY}
 }
 
@@ -78,40 +81,44 @@ table_command() {
 	lookup_command "$1" "${!_cache}" "$3"
 }
 
-# bind_menu_keys: @whichkey-key in the prefix table (and @whichkey-root-key,
-# if set, in the root table) opens the catalog menu. A key that opened it
-# before but no longer should is unbound.
-bind_menu_keys() {
-	local menu open
-	sh_quote menu "$CURRENT_DIR/scripts/menu.sh"
-	format_escape menu "$menu"
-	tmux_quote open "$menu '#{client_name}' '#{pane_id}' prefix"
-	open="run-shell -b $open"
+# script_command <var> <script>: tmux command that runs scripts/<script>
+# for the client and pane where the key was pressed.
+script_command() {
+	local _script
+	sh_quote _script "$CURRENT_DIR/scripts/$2"
+	format_escape _script "$_script"
+	tmux_quote _script "$_script '#{client_name}' '#{pane_id}'"
+	printf -v "$1" 'run-shell -b %s' "$_script"
+}
 
-	if [ -n "$bound_key" ] && [ "$bound_key" != "$menu_key" ]; then
-		unbind_menu_key prefix "$bound_key"
+# bind_tool <table> <key> <bound> <option> <note> <script>: bind <key> in
+# <table> to run <script>, and remember it in <option>. <bound>, the key
+# remembered before, is unbound if it changed and still runs <script>. An
+# empty <key> binds nothing.
+bind_tool() {
+	local command
+	if [ -n "$3" ] && [ "$3" != "$2" ]; then
+		table_command command "$1" "$3"
+		case $command in
+		*"$6"*) queue unbind-key -T "$1" "$3" ;;
+		esac
 	fi
-	queue bind-key -N "Show key bindings" "$menu_key" "$open"
-	queue set-option -g @whichkey-bound-key "$menu_key"
-
-	if [ -n "$bound_root_key" ] && [ "$bound_root_key" != "$root_key" ]; then
-		unbind_menu_key root "$bound_root_key"
-	fi
-	if [ -n "$root_key" ]; then
-		queue bind-key -n -N "Show key bindings" "$root_key" "$open"
-		queue set-option -g @whichkey-bound-root-key "$root_key"
+	if [ -n "$2" ]; then
+		script_command command "$6"
+		queue bind-key -T "$1" -N "$5" "$2" "$command"
+		queue set-option -g "$4" "$2"
 	else
-		queue set-option -gu @whichkey-bound-root-key
+		queue set-option -gu "$4"
 	fi
 }
 
-# unbind_menu_key <table> <key>: unbind <key> if it still opens the menu.
-unbind_menu_key() {
-	local command
-	table_command command "$1" "$2"
-	case $command in
-	*menu.sh*) queue unbind-key -T "$1" "$2" ;;
-	esac
+# bind_menu_keys: @whichkey-key in the prefix table (and @whichkey-root-key,
+# if set, in the root table) opens the catalog menu; @whichkey-search-key,
+# if set, opens the search.
+bind_menu_keys() {
+	bind_tool prefix "$menu_key" "$bound_key" @whichkey-bound-key "Show key bindings" menu.sh
+	bind_tool root "$root_key" "$bound_root_key" @whichkey-bound-root-key "Show key bindings" menu.sh
+	bind_tool prefix "$search_key" "$bound_search_key" @whichkey-bound-search-key "Search key bindings" search.sh
 }
 
 # prefix_trigger <var> <delay-ms>: what a prefix key runs in auto mode:

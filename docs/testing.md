@@ -30,7 +30,11 @@ tmux output, including its order (see `parse_list_keys`).
 Run them under bash 3.2 too: `/bin/bash tests/unit.sh` on macOS. CI does.
 
 Add a unit test for any pure logic: quoting, key decoding, layout, styles,
-parsing.
+parsing, search matching.
+
+`read_key` reads from standard input, so it is tested on a pipe with `stty`
+stubbed out: `printf '\033[B\033[B' | read_keys` must give two keys. Keys
+typed quickly reach a popup in one read; that is what this catches.
 
 `whichkey.tmux` runs `main` only when executed, so the tests source it and
 call `main` against a fake server: `fake_format` answers `display-message`
@@ -45,15 +49,19 @@ a call (`before`, `call_with`) and at the number of calls.
 - A private server: `tmux -L whichkey-test-<pid>`, removed on exit along
   with its socket. `XDG_CACHE_HOME` points into the work directory, so the
   defaults cache and debug log never touch `~/.cache`.
-- Two configs, written by the test: `tmux.conf` (catalog) and `auto.conf`
-  (adds `prefix2 C-a`, `@whichkey-auto on`, `@whichkey-delay 100`).
+- Three configs, written by the test: `tmux.conf` (catalog, with
+  `@whichkey-search-key /`, a group `g`, a group `O` whose table binds
+  `BSpace`, and a root binding `M-z`), `auto.conf` (adds `prefix2 C-a`,
+  `@whichkey-auto on`, `@whichkey-delay 100`) and `fresh.conf` (auto mode
+  and nothing else: a fresh install).
 - Each test binding records that it ran: `bind q set -g @wk-test q`. A check
   then waits for `@wk-test` to hold the expected value.
 - Panes run `stty raw -echo; exec cat >/dev/null` with `remain-on-exit`, so a
   stray key never reaches a shell (a stray `C-d` once ended the session).
-- Clients are real: `tests/pty_run.py <rows> <cols> <log> tmux attach`
+- Clients are real: `tests/pty_run.py <rows> <cols> <log> tmux -u attach`
   gives each its own pseudo-terminal of a fixed size, copies what the test
-  types into it and everything tmux draws into a log file.
+  types into it and everything tmux draws into a log file. `-u` makes the
+  client draw UTF-8 (`›` in popup titles) whatever the locale.
 
 ### Helpers
 
@@ -70,6 +78,8 @@ a call (`before`, `call_with`) and at the number of calls.
 | `expect_fired <name> <value>` | wait for `@wk-test` = value, check, reset it |
 | `expect_drawn <name> <text>` | wait for text, pass or fail |
 | `binding <table> <key>` | the command bound to a key, from plain `list-keys` (works on every version) |
+| `no_search` | no `search-popup.sh` is running (the search has closed) |
+| `doctor_says <name> <text>` | the last `doctor.sh` run printed `<text>` |
 
 ### Rules
 
@@ -89,6 +99,14 @@ a call (`before`, `call_with`) and at the number of calls.
   next keys. Use `close_popup`: tmux holds a typed Escape for `escape-time`
   (500 ms by default on tmux 3.4; the test config sets 10 ms), so the next
   step must wait until the popup is gone.
+- **Type into a popup only once its script has drawn something**: the
+  grid of a group popup (`wait_for drawn "group-a"`), the search's hints
+  line (`open "esc close" C-b /`). tmux draws the popup's border and title
+  before the script sets raw input; in between, a typed `\r` becomes `\n`
+  (C-j, "move down" in the search) and `\177` is eaten as "erase".
+- `doctor.sh` runs through `run-shell` (so it talks to the test server),
+  with its output and exit status written to `$WORK/doctor.txt` and
+  `doctor.rc`.
 - A second client gets its own fd: `printf '\033' >&4`.
 
 ### Switches
@@ -146,8 +164,8 @@ keystrokes in a terminal and writes a GIF.
 
 | File | Role |
 |---|---|
-| `docs/demo.tape` | the script: start tmux, `Ctrl+B` and wait (popup), `\|` (split), `Ctrl+B w` (group popup), `Ctrl+B Space` (catalog), arrows; `Screenshot` lines at the popup, the group and the catalog |
-| `docs/demo.conf` | a tmux config for the demo only: a few noted bindings, a `+window` group, Dracula colours, a plain `$` prompt |
+| `docs/demo.tape` | the script: start tmux, `Ctrl+B` and wait (popup), `\|` (split), `Ctrl+B w` (group popup), Backspace (back up), `Ctrl+B Space` (catalog), arrows, `Ctrl+B /` and `win` (search); `Screenshot` lines at the popup, the group, the catalog and the search |
+| `docs/demo.conf` | a tmux config for the demo only: a few noted bindings, a `+window` group, `@whichkey-search-key /`, Dracula colours, a plain `$` prompt |
 | `.github/workflows/demo.yml` | runs the tape on Ubuntu (`workflow_dispatch` only) and uploads the GIF and screenshots as the `demo` artifact |
 
 Record it after any visible change:
@@ -158,8 +176,9 @@ gh run watch "$(gh run list --workflow demo.yml --limit 1 --json databaseId -q '
 gh run download "$(gh run list --workflow demo.yml --limit 1 --json databaseId -q '.[0].databaseId')" -n demo -D /tmp/demo
 ```
 
-Then look at `/tmp/demo/shots/popup.png`, `group.png` and `catalog.png`. If
-they are right, copy `/tmp/demo/demo.gif` to `docs/demo.gif` and commit it.
+Then look at `/tmp/demo/shots/popup.png`, `group.png` (title
+`prefix › window`), `catalog.png` and `search.png`. If they are right, copy
+`/tmp/demo/demo.gif` to `docs/demo.gif` and commit it.
 Locally, with vhs installed (`brew install vhs`), `vhs docs/demo.tape` from
 the repository root does the same.
 

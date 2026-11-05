@@ -1,4 +1,5 @@
 # Key names: decoding terminal input, and how to send a key to tmux.
+# press_args requires quote.sh.
 
 # key_hex <var> <key>: if <key> is a single ASCII character, set <var> to
 # its code as two hex digits. Such keys are sent with `send-keys -H`, because
@@ -11,6 +12,20 @@ key_hex() {
 	# bash 3.2 gives the first byte of a multibyte character as a negative.
 	[ "$_code" -ge 0 ] && [ "$_code" -lt 128 ] || return 1
 	printf -v "$1" '%02x' "$_code"
+}
+
+# press_args <client> <table> <key>: tmux arguments that press <key> in
+# <table> on <client>, so its binding runs exactly as if typed. Sets PRESS.
+press_args() {
+	local _hex _key
+	PRESS=(switch-client -c "$1" -T "$2" \; send-keys -c "$1" -K)
+	if key_hex _hex "$3"; then
+		PRESS+=(-H "$_hex")
+	else
+		# Named keys only need a trailing ";" escaped (M-;).
+		argv_escape _key "$3"
+		PRESS+=("$_key")
+	fi
 }
 
 # needs_rest <byte>: succeeds if more bytes follow <byte> as part of the same

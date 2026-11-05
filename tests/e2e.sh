@@ -96,6 +96,10 @@ bind C-M-a set -g @wk-test C-M-a
 bind C-o set -g @wk-test C-o
 bind C-n set -g @wk-test C-n
 bind -r H resize-pane -L 1
+bind -N "+other" O switch-client -T wkother
+bind -T wkother BSpace set -g @wk-test other-bspace
+bind -n M-z set -g @wk-test root-mz
+set -g @whichkey-search-key /
 EOF
 [ -z "$keep_work" ] || echo "set -g @whichkey-debug on" >>"$WORK/tmux.conf"
 cp "$WORK/tmux.conf" "$WORK/auto.conf"
@@ -105,6 +109,16 @@ set -g prefix2 C-a
 bind C-a send-prefix -2
 set -g @whichkey-auto on
 set -g @whichkey-delay 100
+run-shell '$ROOT/whichkey.tmux'
+EOF
+# A fresh install: auto mode and nothing else.
+cat >"$WORK/fresh.conf" <<EOF
+set -g remain-on-exit on
+set -g default-command 'stty raw -echo; exec cat >/dev/null'
+set -g escape-time 10
+set -g @whichkey-auto on
+set -g @whichkey-delay 100
+$([ -z "$keep_work" ] || echo "set -g @whichkey-debug on")
 run-shell '$ROOT/whichkey.tmux'
 EOF
 
@@ -128,7 +142,7 @@ attach() {
 	mkfifo "$fifo"
 	clients_before=" $(t list-clients -F '#{client_name}' | tr '\n' ' ') "
 	TERM=xterm-256color python3 "$ROOT/tests/pty_run.py" "$2" 160 "$WORK/$3.log" \
-		tmux -L "$SOCKET" attach -t test <"$fifo" >/dev/null 2>&1 &
+		tmux -L "$SOCKET" -u attach -t test <"$fifo" >/dev/null 2>&1 &
 	pids+=($!)
 	eval "exec $1>\"\$fifo\""
 	wait_for new_client
@@ -235,6 +249,7 @@ binding() {
 	}'
 }
 option_unset() { [ -z "$(t show -gqv "$1")" ]; }
+no_search() { ! pgrep -f "$ROOT/scripts/search-popup.sh" >/dev/null; }
 
 echo "-- catalog menu"
 start 100
@@ -254,6 +269,29 @@ typed g
 expect_drawn "menu: a group opens its submenu" " wkgroup "
 typed a
 expect_fired "group submenu runs its binding" group-a
+
+open " prefix " C-b Space
+mark
+typed /
+expect_drawn "the catalog's Search item opens the search" "esc close"
+mark
+typed group-a
+expect_drawn "search shows the whole key sequence" "C-b g a"
+typed '\r'
+expect_fired "search runs a binding inside a group" group-a
+
+open "esc close" C-b /
+# X, then BSpace deletes it.
+typed '@wk-test dollarX\177\r'
+expect_fired "search: typed query, BSpace, Enter" dollar
+
+open "esc close" C-b /
+typed 'rtmz\r'
+expect_fired "search: characters in order find a root binding" root-mz
+
+open "esc close" C-b /
+typed '\033'
+if wait_for no_search; then pass "Escape closes the search"; else fail "the search stayed open"; fi
 
 before=$(t display -p '#{session_windows}')
 open " prefix " C-b Space
@@ -316,8 +354,28 @@ open "Enter group" C-b
 mark
 key g
 expect_drawn "popup follows a group key" " wkgroup "
+expect_drawn "a group popup's title shows the path" "prefix › wkgroup"
 key a
 expect_fired "group popup runs its binding" group-a
+
+# Wait for the grid, which popup.sh draws once its input is raw: tmux draws
+# the title before that, and a \177 typed in between is eaten as "erase".
+open "Enter group" C-b
+mark
+key g
+wait_for drawn "group-a"
+mark
+typed '\177'
+expect_drawn "BSpace goes back to the popup above" "Enter group"
+key q
+expect_fired "the popup above runs its binding" q
+
+open "Enter group" C-b
+mark
+key O
+wait_for drawn "other-bspace"
+typed '\177'
+expect_fired "a group that binds BSpace gets it" other-bspace
 
 mark
 key C-b g
@@ -433,6 +491,37 @@ check "the old prefix gets send-prefix back" send-prefix "$(binding prefix C-b)"
 open "Enter group" C-x
 expect_drawn "the new prefix shows the popup" "Enter group"
 close_popup
+
+echo "-- doctor"
+t run-shell "$ROOT/scripts/doctor.sh >'$WORK/doctor.txt'; echo \$? >'$WORK/doctor.rc'"
+check "doctor finds no problem" 0 "$(cat "$WORK/doctor.rc")"
+doctor_says() {
+	if grep -qF -- "$2" "$WORK/doctor.txt"; then pass "doctor: $1"; else fail "doctor: $1: no '$2' in $(cat "$WORK/doctor.txt")"; fi
+}
+doctor_says "the popup is set up" "popup after 100 ms on C-x (prefix)"
+doctor_says "a binding without a note" "@wk-test q"
+doctor_says "a binding that replaces a default" "was: "
+t set -g prefix C-b
+t run-shell "$ROOT/scripts/doctor.sh >'$WORK/doctor.txt'; echo \$? >'$WORK/doctor.rc'"
+check "doctor counts a prefix set after the plugin" 1 "$(cat "$WORK/doctor.rc")"
+doctor_says "explains it" "load the plugin last"
+t set -g prefix None
+
+echo "-- a fresh config"
+stop
+start 50 fresh.conf
+open "Choose a window" C-b
+expect_drawn "with no bindings of yours, the popup shows tmux's" "Choose a window"
+close_popup
+t set -g @whichkey-popup-defaults off
+mark
+key C-b
+expect_drawn "@whichkey-popup-defaults off: only yours" "Show key bindings"
+if drawn "Choose a window"; then fail "defaults shown with @whichkey-popup-defaults off"; else pass "no defaults with @whichkey-popup-defaults off"; fi
+close_popup
+
+if t source-file "$ROOT/examples/starter.conf"; then pass "examples/starter.conf loads"; else fail "examples/starter.conf has errors"; fi
+check "starter.conf: a group" "switch-client -T window" "$(binding prefix W)"
 
 stop
 start 10 auto.conf

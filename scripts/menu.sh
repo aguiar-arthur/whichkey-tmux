@@ -28,6 +28,7 @@ source "$CURRENT_DIR/lib/debug.sh"
 debug_init "$@"
 
 SELF="$CURRENT_DIR/menu.sh"
+SEARCH="$CURRENT_DIR/search.sh"
 
 client=$1
 pane=$2
@@ -61,17 +62,25 @@ read_settings() {
 	fi
 }
 
+# run_command <var> <script> <arg>...: tmux command that runs <script> with
+# literal <arg>s in the background.
+run_command() {
+	local _var=$1 _sh _arg _quoted
+	sh_quote _sh "$2"
+	shift 2
+	for _arg in "$@"; do
+		sh_quote _quoted "$_arg"
+		_sh="$_sh $_quoted"
+	done
+	format_escape _sh "$_sh"
+	tmux_quote _sh "$_sh"
+	printf -v "$_var" 'run-shell -b %s' "$_sh"
+}
+
 # menu_command <var> <client> <pane> <table> <page>: tmux command that opens
 # this menu on another table or page.
 menu_command() {
-	local _self _client _pane _table _sh
-	sh_quote _self "$SELF"
-	sh_quote _client "$2"
-	sh_quote _pane "$3"
-	sh_quote _table "$4"
-	format_escape _sh "$_self $_client $_pane $_table $5"
-	tmux_quote _sh "$_sh"
-	printf -v "$1" 'run-shell -b %s' "$_sh"
+	run_command "$1" "$SELF" "$2" "$3" "$4" "$5"
 }
 
 # key_command <var> <client> <table> <key>: tmux command that presses <key>
@@ -93,17 +102,12 @@ key_command() {
 	fi
 }
 
-# is_shown <index>: hide this menu's own binding, tmux defaults that match
-# the exclude pattern and, if @whichkey-exclude is set, your bindings that
-# match it.
+# is_shown <index>: hide the keys that open this menu or the search (the
+# menu has its own Search item) and what @whichkey-exclude hides
+# (is_excluded).
 is_shown() {
-	local key=${WK_KEYS[$1]}
-	case ${WK_COMMANDS[$1]} in *"$SELF"*) return 1 ;; esac
-	if [ "${WK_IS_USER[$1]}" = 1 ]; then
-		[ -z "$exclude" ] || ! [[ $key =~ $exclude ]]
-	else
-		! [[ $key =~ ${exclude:-$WK_DEFAULT_EXCLUDE} ]]
-	fi
+	case ${WK_COMMANDS[$1]} in *"$SELF"* | *"$SEARCH"*) return 1 ;; esac
+	! is_excluded "$1" "$exclude"
 }
 
 # build_items: a menu item for each shown binding, as ITEM_LABELS, ITEM_KEYS,
@@ -168,8 +172,8 @@ free_key() {
 	printf -v "$_var" '%s' ''
 }
 
-# menu_args: display-menu arguments for the rows START..END of ORDER, plus
-# page navigation. Sets ARGS.
+# menu_args: display-menu arguments for the rows START..END of ORDER, then
+# the Search item and page navigation. Sets ARGS.
 menu_args() {
 	local i n nav key
 	ARGS=()
@@ -183,8 +187,13 @@ menu_args() {
 		fi
 	done
 
-	[ "$PAGES" -gt 1 ] || return 0
 	ARGS+=("")
+	run_command nav "$SEARCH" "$client" "$pane"
+	format_escape nav "$nav"
+	free_key key / C-s
+	ARGS+=("Search…" "$key" "$nav")
+
+	[ "$PAGES" -gt 1 ] || return 0
 	if [ "$PAGE" -lt "$PAGES" ]; then
 		menu_command nav "$client" "$pane" "$table" $((PAGE + 1))
 		format_escape nav "$nav"
@@ -218,8 +227,9 @@ main() {
 		return
 	fi
 	# Menus taller than the client are silently not drawn, so paginate.
-	# Reserve rows for the border and the status line.
-	paginate "${#ORDER[@]}" $((height - 4)) "$page"
+	# Reserve rows for the border, the status line and the Search item
+	# with its separator.
+	paginate "${#ORDER[@]}" $((height - 6)) "$page"
 	menu_args
 	show_menu
 }
