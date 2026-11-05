@@ -163,7 +163,10 @@ docs/                  internals docs; demo.tape/demo.conf record demo.gif
   made `display-menu` read the item as a separator and shift every argument.
 - `printf -v var ''` silently left stale values in place.
 - A note starting with `+` on a group rendered as `++name`.
-- A popup left open in one e2e test swallowed the keys of the next ones.
+- A popup left open in one e2e test swallowed the keys of the next ones,
+  twice: once because tmux 3.4 popups ignore Escape from `send-keys -K`,
+  once because the test did not wait for a typed Escape (held for
+  `escape-time`) to close it. Use `close_popup`.
 - Messages and popup titles were sent without `format_escape`: tmux read
   the user's regex or table name as a format.
 - `setup_auto` set `prefix None` before binding the key: a failed binding

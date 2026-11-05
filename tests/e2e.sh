@@ -66,6 +66,8 @@ set -g remain-on-exit on
 set -g default-command 'stty raw -echo; exec cat >/dev/null'
 set -g @whichkey-y 1
 set -g repeat-time 2000
+# A typed Escape reaches the popup after escape-time.
+set -g escape-time 10
 
 bind q set -g @wk-test q
 bind j set -g @wk-test j
@@ -172,6 +174,14 @@ key() {
 			t send-keys -c "$client" -K "$k"
 		fi
 	done
+}
+
+# close_popup: type Escape into the main client and wait until its popup has
+# closed. Without the wait the next key can land in the popup: tmux holds a
+# lone Escape for escape-time (500 ms by default on tmux 3.4).
+close_popup() {
+	typed '\033'
+	wait_for table_is root "$main"
 }
 
 # typed <bytes>: type raw bytes (printf %b escapes) into the main client.
@@ -360,7 +370,7 @@ mark
 t send-keys -c "$main" -K C-b
 t send-keys -c "$second" -K C-b
 expect_drawn "a prefix on another client does not cancel the popup" "Enter group"
-typed '\033'
+close_popup
 # The second client's popup may still be on its way: wait for it, then
 # type Escape into that client.
 wait_for grep -aqF "Enter group" "$WORK/second.log"
@@ -383,7 +393,7 @@ echo "-- options"
 t set -g @whichkey-debug on
 t run-shell "$ROOT/whichkey.tmux"
 open "Enter group" C-b
-typed '\033'
+close_popup
 debug_log="$XDG_CACHE_HOME/whichkey-tmux/debug.log"
 logged() { grep -q "== .* $1" "$debug_log" 2>/dev/null; }
 if wait_for logged auto.sh && wait_for logged popup.sh; then
@@ -422,13 +432,13 @@ check "the old prefix key is released" "" "$(binding root C-b)"
 check "the old prefix gets send-prefix back" send-prefix "$(binding prefix C-b)"
 open "Enter group" C-x
 expect_drawn "the new prefix shows the popup" "Enter group"
-typed '\033'
+close_popup
 
 stop
 start 10 auto.conf
 open " prefix " C-b
 expect_drawn "popup too small for every binding says how many more" "more"
-typed '\033'
+close_popup
 
 [ "$failures" -eq 0 ] && echo "all passed" || echo "$failures failed"
 exit "$failures"

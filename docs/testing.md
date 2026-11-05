@@ -63,6 +63,7 @@ a call (`before`, `call_with`) and at the number of calls.
 | `attach <fd> <rows> <name>` | attach another client; sets `$client` |
 | `key <key>...` | `send-keys -c $client -K` (single characters as `-H` hex) |
 | `typed <bytes>` | write raw bytes (`printf %b`) to the main client's terminal |
+| `close_popup` | type Escape and wait until the main client is back in the root table |
 | `mark` / `drawn <text>` | has `<text>` been drawn since the mark? (greps the client log) |
 | `open <text> <key>...` | mark, press keys, wait until `<text>` is drawn |
 | `wait_for <cmd...>` | poll a command for up to 3 s |
@@ -84,7 +85,10 @@ a call (`before`, `call_with`) and at the number of calls.
 - **`drawn` checks bytes, not the screen.** Text that was drawn and then
   scrolled away still matches. To see what the user sees, look at a picture
   (the demo screenshots).
-- **Close what you open**: a popup left open swallows every following key.
+- **Close what you open, and wait for it**: a popup left open swallows the
+  next keys. Use `close_popup`: tmux holds a typed Escape for `escape-time`
+  (500 ms by default on tmux 3.4; the test config sets 10 ms), so the next
+  step must wait until the popup is gone.
 - A second client gets its own fd: `printf '\033' >&4`.
 
 ### Switches
