@@ -62,7 +62,29 @@ jobs:
           make install
       - run: echo "$HOME/tmux/bin" >>"$GITHUB_PATH"
       - run: tmux -V
+      - name: Probe the tmux commands the plugin relies on
+        run: |
+          t() { echo "\$ tmux $*"; tmux -L probe "$@" 2>&1; echo "  -> $?"; }
+          t -f /dev/null new-session -d -s p
+          t bind-key -N "A group" g switch-client -T grp
+          t list-keys -T prefix -F '#{key_string}|#{key_note}|#{key_command}' C-b
+          t list-keys -T prefix -F '#{key_command}' g
+          t list-keys -T prefix C-b
+          t list-keys -T prefix -F '#{key_string}|#{key_note}|#{key_command}' | grep -E '^(g|c|C-b)[|]'
+          t display-message -p '#{version} #{e|+:1,1} #{client_key_table} #{window_layout}'
+          t run-shell -b -d 0.1 true
+          t send-keys -K -H 61
+          t display-menu -x C -y S Item i "display-message hi"
+          t display-popup -E -b rounded -T title true
+          t kill-server
       - run: make e2e
+        env:
+          E2E_WORK: ${{ runner.temp }}/e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-tmux-${{ matrix.tmux }}
+          path: ${{ runner.temp }}/e2e
 
   e2e-macos:
     name: e2e (tmux latest, macOS, bash 3.2)

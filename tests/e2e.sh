@@ -12,12 +12,23 @@
 # values), not fixed sleeps, so a slow moment does not fail a check.
 #
 # Usage: tests/e2e.sh
+#
+# With E2E_WORK=<dir>, the test works in <dir> and keeps it: the client
+# logs, and with @whichkey-debug on from the start, the plugin's trace in
+# <dir>/cache/whichkey-tmux/debug.log. CI uploads it when the test fails.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../scripts/lib/keys.sh
 source "$ROOT/scripts/lib/keys.sh"
 SOCKET="whichkey-test-$$"
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/whichkey-test.XXXXXX")
+if [ -n "$E2E_WORK" ]; then
+	WORK=$E2E_WORK
+	mkdir -p "$WORK"
+	keep_work=1
+else
+	WORK=$(mktemp -d "${TMPDIR:-/tmp}/whichkey-test.XXXXXX")
+	keep_work=
+fi
 # Keep the defaults cache and the debug log out of ~/.cache.
 export XDG_CACHE_HOME="$WORK/cache"
 LOG="$WORK/main.log"
@@ -36,7 +47,12 @@ stop() {
 	done
 	pids=()
 }
-trap 'stop; rm -rf "$WORK" "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/$SOCKET"' EXIT
+cleanup() {
+	stop
+	rm -f "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/$SOCKET"
+	[ -n "$keep_work" ] || rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 # Quoted heredoc: these lines reach tmux exactly as written.
 cat >"$WORK/tmux.conf" <<'EOF'
@@ -74,6 +90,7 @@ bind C-o set -g @wk-test C-o
 bind C-n set -g @wk-test C-n
 bind -r H resize-pane -L 1
 EOF
+[ -z "$keep_work" ] || echo "set -g @whichkey-debug on" >>"$WORK/tmux.conf"
 cp "$WORK/tmux.conf" "$WORK/auto.conf"
 echo "run-shell '$ROOT/whichkey.tmux'" >>"$WORK/tmux.conf"
 cat >>"$WORK/auto.conf" <<EOF

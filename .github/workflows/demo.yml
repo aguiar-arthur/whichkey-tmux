@@ -1,0 +1,22 @@
+name: Demo
+
+# Records docs/demo.gif from docs/demo.tape. Run it by hand after UI changes,
+# download the "demo" artifact and commit the GIF.
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+      - uses: charmbracelet/vhs-action@v2
+        with:
+          path: docs/demo.tape
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo
+          path: docs/demo.gif

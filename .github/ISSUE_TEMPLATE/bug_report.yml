@@ -1,0 +1,51 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant tmux.conf lines
+      description: The whichkey options and the bindings involved.
+      render: tmux
+  - type: input
+    id: tmux
+    attributes:
+      label: tmux version
+      description: Output of `tmux -V`
+    validations:
+      required: true
+  - type: input
+    id: bash
+    attributes:
+      label: bash version
+      description: Output of `bash --version | head -1`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and terminal
+      placeholder: macOS 15, iTerm2
+    validations:
+      required: true
+  - type: input
+    id: prefix
+    attributes:
+      label: Prefix state
+      description: Output of `tmux show -g prefix prefix2 @whichkey-prefix`
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: >
+        `set -g @whichkey-debug on`, reload, reproduce, then paste
+        `~/.cache/whichkey-tmux/debug.log` (or the relevant part).
+      render: text

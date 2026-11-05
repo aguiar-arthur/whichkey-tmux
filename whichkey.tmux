@@ -129,13 +129,15 @@ teardown_auto() {
 	tmux set-hook -gu "$WK_DETACH_HOOK" 2>/dev/null
 }
 
-# apply_debug_option: start or stop the debug log. Each reload with it on
-# starts a fresh log.
+# apply_debug_option: start or stop the debug log, starting it afresh once it
+# passes 1 MB.
 apply_debug_option() {
 	case $(get_option @whichkey-debug "$WK_DEFAULT_DEBUG") in
 	on | yes | 1)
 		mkdir -p "${WK_DEBUG_LOG%/*}"
-		: >"$WK_DEBUG_LOG"
+		if [ "$(wc -c <"$WK_DEBUG_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+			: >"$WK_DEBUG_LOG"
+		fi
 		tmux set-environment -g WHICHKEY_TMUX_DEBUG "$WK_DEBUG_LOG"
 		WHICHKEY_TMUX_DEBUG=$WK_DEBUG_LOG
 		;;
