@@ -91,7 +91,9 @@ parse_list_keys() {
 }
 
 # binding_command <var> <table> <key>: the command bound to <key> in
-# <table>, or empty. (list-keys <key> lists nothing before tmux 3.8.)
+# <table>, or empty. Scans the table rather than asking for the key with
+# `list-keys -T <table> <key>`: tmux 3.7 shows a single result in the
+# status line instead of printing it.
 binding_command() {
 	local _list _rest
 	list_bindings _list "$2"

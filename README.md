@@ -136,8 +136,13 @@ make test   # unit tests (no tmux server, under a second) and e2e (~20 s)
 
 `tests/e2e.sh` starts a private tmux server with real clients on
 pseudo-terminals, presses keys and types raw bytes, and checks the bindings
-fire. Everything must run on bash 3.2. See [CONTRIBUTING.md](CONTRIBUTING.md)
-for the code layout.
+fire. Everything must run on bash 3.2.
+
+How it is built and why: [docs/architecture.md](docs/architecture.md),
+[docs/decisions.md](docs/decisions.md),
+[docs/tmux-compatibility.md](docs/tmux-compatibility.md),
+[docs/testing.md](docs/testing.md). Rules for changes, for people and AI
+agents: [AGENTS.md](AGENTS.md). See also [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
