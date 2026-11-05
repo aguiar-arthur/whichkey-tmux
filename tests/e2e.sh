@@ -40,6 +40,11 @@ t() { tmux -L "$SOCKET" "$@"; }
 stop() {
 	local pid
 	t kill-server 2>/dev/null
+	# Keep each server's debug trace (see E2E_WORK) in a file of its own.
+	if [ -f "$XDG_CACHE_HOME/whichkey-tmux/debug.log" ]; then
+		servers=$((${servers:-0} + 1))
+		mv "$XDG_CACHE_HOME/whichkey-tmux/debug.log" "$WORK/debug-$servers.log"
+	fi
 	exec 3>&- 4>&-
 	for pid in "${pids[@]}"; do
 		kill "$pid" 2>/dev/null
