@@ -6,6 +6,7 @@ WK_DEFAULT_Y=S             # @whichkey-y
 WK_DEFAULT_LABEL_WIDTH=40  # @whichkey-label-width
 WK_DEFAULT_AUTO=off        # @whichkey-auto
 WK_DEFAULT_DELAY=200       # @whichkey-delay, in milliseconds
+WK_DEFAULT_DEBUG=off       # @whichkey-debug
 
 # @whichkey-exclude: unless set, these tmux defaults are hidden from the
 # menu: window numbers, arrow-key variants and the M-1..M-5 layout presets,

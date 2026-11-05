@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# End-to-end test: runs a private tmux server with a real attached client
-# (via macOS script(1)), drives the menu and the auto popup with simulated
-# keypresses and checks that the chosen bindings actually fire.
+# End-to-end test: runs a private tmux server with real attached clients (on
+# pseudo-terminals, via tests/pty_run.py), drives the menu and the auto popup
+# with keypresses and checks that the chosen bindings actually fire.
+#
+# Keys are pressed two ways: `key` sends tmux key names straight to the
+# client's key table (send-keys -K), and `typed` writes raw bytes to the
+# client's terminal, which tmux parses like real typing. Popups only receive
+# cursor and function keys the second way.
 #
 # Waits are polls on observable state (text drawn on the client, option
 # values), not fixed sleeps, so a slow moment does not fail a check.
@@ -13,19 +18,23 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/lib/keys.sh"
 SOCKET="whichkey-test-$$"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/whichkey-test.XXXXXX")
-LOG="$WORK/client.log"
+# Keep the defaults cache and the debug log out of ~/.cache.
+export XDG_CACHE_HOME="$WORK/cache"
+LOG="$WORK/main.log"
 failures=0
-feeder=
+pids=()
 
 t() { tmux -L "$SOCKET" "$@"; }
 
 stop() {
+	local pid
 	t kill-server 2>/dev/null
-	if [ -n "$feeder" ]; then
-		kill "$feeder" 2>/dev/null
-		wait "$feeder" 2>/dev/null
-	fi
-	feeder=
+	exec 3>&- 4>&-
+	for pid in "${pids[@]}"; do
+		kill "$pid" 2>/dev/null
+		wait "$pid" 2>/dev/null
+	done
+	pids=()
 }
 trap 'stop; rm -rf "$WORK" "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/$SOCKET"' EXIT
 
@@ -55,36 +64,25 @@ bind -N "Enter group" g switch-client -T wkgroup
 bind -T wkgroup a set -g @wk-test group-a
 bind Up set -g @wk-test Up
 bind C-Up set -g @wk-test C-Up
+bind Home set -g @wk-test Home
+bind End set -g @wk-test End
 bind PPage set -g @wk-test PPage
+bind F5 set -g @wk-test F5
 bind M-a set -g @wk-test M-a
+bind C-M-a set -g @wk-test C-M-a
 bind C-o set -g @wk-test C-o
+bind C-n set -g @wk-test C-n
 bind -r H resize-pane -L 1
 EOF
 cp "$WORK/tmux.conf" "$WORK/auto.conf"
 echo "run-shell '$ROOT/whichkey.tmux'" >>"$WORK/tmux.conf"
 cat >>"$WORK/auto.conf" <<EOF
+set -g prefix2 C-a
+bind C-a send-prefix -2
 set -g @whichkey-auto on
 set -g @whichkey-delay 100
 run-shell '$ROOT/whichkey.tmux'
 EOF
-
-# start <rows> [config]: start the server and attach a client of that height.
-start() {
-	: >"$LOG"
-	t -f "$WORK/${2:-tmux.conf}" new-session -d -s test
-	(sleep 300 | TERM=xterm-256color script -F -q "$LOG" \
-		sh -c "stty rows $1 cols 160; exec tmux -L $SOCKET attach -t test") >/dev/null 2>&1 &
-	feeder=$!
-	client=
-	wait_for attached || {
-		echo "FAIL: could not attach a client"
-		exit 1
-	}
-}
-attached() {
-	client=$(t list-clients -F '#{client_name}' 2>/dev/null | head -1)
-	[ -n "$client" ]
-}
 
 # wait_for <command...>: poll until it succeeds, for up to 3 seconds.
 wait_for() {
@@ -97,11 +95,47 @@ wait_for() {
 	return 1
 }
 
+# attach <fd> <rows> <name>: attach a client of that height, whose terminal
+# is typed into through file descriptor <fd> (3 or 4) and drawn into
+# $WORK/<name>.log. Sets $client to its name.
+attach() {
+	local fifo="$WORK/$3.in"
+	rm -f "$fifo" "$WORK/$3.log"
+	mkfifo "$fifo"
+	clients_before=" $(t list-clients -F '#{client_name}' | tr '\n' ' ') "
+	TERM=xterm-256color python3 "$ROOT/tests/pty_run.py" "$2" 160 "$WORK/$3.log" \
+		tmux -L "$SOCKET" attach -t test <"$fifo" >/dev/null 2>&1 &
+	pids+=($!)
+	eval "exec $1>\"\$fifo\""
+	wait_for new_client
+}
+new_client() {
+	local c
+	for c in $(t list-clients -F '#{client_name}'); do
+		case $clients_before in *" $c "*) ;; *)
+			client=$c
+			return 0
+			;;
+		esac
+	done
+	return 1
+}
+
+# start <rows> [config]: start the server and attach the main client.
+start() {
+	t -f "$WORK/${2:-tmux.conf}" new-session -d -s test
+	attach 3 "$1" main || {
+		echo "FAIL: could not attach a client"
+		exit 1
+	}
+	main=$client
+}
+
 # Client output since the last mark contains <text>.
 mark() { log_mark=$(wc -c <"$LOG"); }
 drawn() { tail -c +$((log_mark + 1)) "$LOG" | LC_ALL=C grep -aqF -- "$1"; }
 
-# key <key...>: press keys on the client, no waiting.
+# key <key...>: press keys on the client by name, no waiting.
 key() {
 	local k code
 	for k in "$@"; do
@@ -113,7 +147,10 @@ key() {
 	done
 }
 
-# open <text>: press the given keys and wait until <text> is drawn.
+# typed <bytes>: type raw bytes (printf %b escapes) into the main client.
+typed() { printf '%b' "$1" >&3; }
+
+# open <text> <key...>: press the keys and wait until <text> is drawn.
 open() {
 	local text=$1
 	shift
@@ -144,13 +181,16 @@ expect_drawn() {
 	if wait_for drawn "$2"; then pass "$1"; else fail "$1: '$2' never drawn"; fi
 }
 windows_above() { [ "$(t display -p '#{session_windows}')" -gt "$1" ]; }
-table_is() { [ "$(t display -p -c "$client" '#{client_key_table}')" = "$1" ]; }
+table_is() { [ "$(t display -p -c "${2:-$client}" '#{client_key_table}')" = "$1" ]; }
+binding() { t list-keys -T "$1" -F '#{key_command}' "$2" 2>/dev/null; }
+option_unset() { [ -z "$(t show -gqv "$1")" ]; }
 
 echo "-- catalog menu"
 start 100
 
 for pair in "q q" "j j" "G G" "Enter Enter" "# hash" "\$ dollar" "% percent" \
-	"' squote" "\" dquote" "; semicolon" "{ lbrace" "} rbrace" "~ tilde" "\\ backslash"; do
+	"' squote" "\" dquote" "; semicolon" "{ lbrace" "} rbrace" "~ tilde" "\\ backslash" \
+	"C-n C-n"; do
 	k=${pair%% *}
 	open " prefix " C-b Space || fail "menu did not open for $k"
 	key "$k"
@@ -168,6 +208,14 @@ key c
 wait_for windows_above "$before"
 check "built-in binding (new-window)" $((before + 1)) "$(t display -p '#{session_windows}')"
 
+t set -g @whichkey-exclude '('
+mark
+key C-b Space
+expect_drawn "an invalid @whichkey-exclude is reported" "not a valid regex"
+wait_for drawn " prefix "
+key Escape
+t set -gu @whichkey-exclude
+
 stop
 start 24
 # Short client: several pages, with your bindings on the first one.
@@ -177,24 +225,32 @@ if drawn "Enter group" && ! drawn "Choose a window"; then
 else
 	fail "page 1 does not start with your bindings"
 fi
+# C-n is bound in the config, so the next page moves to NPage.
 mark
-key C-n
-expect_drawn "pagination" "prefix (2/"
+key NPage
+expect_drawn "pagination avoids a key you bound" "prefix (2/"
 key Escape
 
 echo "-- auto popup"
 stop
 start 50 auto.conf
 check "prefix option is off" None "$(t show -gv prefix)"
-check "send-prefix stand-in" "send-keys C-b" "$(t list-keys -T prefix -F '#{key_command}' C-b)"
+check "prefix2 option is off" None "$(t show -gv prefix2)"
+check "send-prefix stand-in" "send-keys C-b" "$(binding prefix C-b)"
+check "send-prefix -2 stand-in" "send-keys C-a" "$(binding prefix C-a)"
 
 mark
 key C-b
 check "client_prefix still works" 1 "$(t display -p -c "$client" '#{client_prefix}')"
 expect_drawn "popup shows config bindings" "Enter group"
 if drawn "Choose a window"; then fail "popup lists a tmux default binding"; else pass "popup hides tmux defaults"; fi
+if drawn "send-keys C-"; then fail "popup lists a send-prefix stand-in"; else pass "popup hides the send-prefix stand-ins"; fi
 key q
 expect_fired "popup: listed key" q
+
+open "Enter group" C-a
+key q
+expect_fired "prefix2 gets the popup too" q
 
 before=$(t display -p '#{session_windows}')
 open "Enter group" C-b
@@ -215,10 +271,21 @@ expect_drawn "group typed before the delay gets a popup" " wkgroup "
 key a
 expect_fired "group popup (fast) runs its binding" group-a
 
+# Real typing: tmux parses the bytes into a key, re-encodes it for the
+# popup, and popup.sh has to decode it back.
+for pair in 'Up \033[A' 'C-Up \033[1;5A' 'Home \033[H' 'End \033[F' 'PPage \033[5~' \
+	'F5 \033[15~' 'M-a \033a' 'C-M-a \033\001' 'C-o \017' 'Enter \r' 'q q' \
+	'percent %' 'semicolon ;' 'dquote "'; do
+	open "Enter group" C-b || fail "popup did not open for ${pair%% *}"
+	typed "${pair#* }"
+	expect_fired "typed into the popup: ${pair%% *}" "${pair%% *}"
+done
+
 open "Enter group" C-b
-key Escape
+typed '\033'
 wait_for table_is root
-check "popup: Escape leaves the prefix table" root "$(t display -p -c "$client" '#{client_key_table}')"
+check "typed Escape closes the popup and leaves the prefix table" root \
+	"$(t display -p -c "$client" '#{client_key_table}')"
 
 # Fast typing: the key lands before the delay, so no popup may appear. If one
 # did, it would swallow the next key.
@@ -241,35 +308,70 @@ key C-b q
 expect_fired "prefix works in copy mode" q
 t send-keys -X -t test cancel
 
-# send-keys -K does not deliver cursor keys to a popup (real typing does),
-# so feed popup.sh raw terminal bytes on a pty of its own instead.
-decode() {
-	echo x >"$WORK/content"
-	(sleep 0.3; printf '%b' "$1"; sleep 0.5) |
-		TMUX="$(t display -p '#{socket_path}'),0,0" script -q /dev/null \
-			bash "$ROOT/scripts/popup.sh" "$client" "$(t display -p '#{pane_id}')" prefix \
-			"$WORK/content" 0 100 " g " >/dev/null 2>&1
-}
-for pair in 'Up \033[A' 'Up \033OA' 'C-Up \033[1;5A' 'PPage \033[5~' 'M-a \033a' \
-	'C-o \017' 'Enter \r' 'q q' 'percent %' 'semicolon ;'; do
-	decode "${pair#* }"
-	expect_fired "popup decodes ${pair#* }" "${pair%% *}"
-done
-t switch-client -c "$client" -T prefix
-decode '\033'
-wait_for table_is root
-check "popup: lone Escape closes and leaves prefix" root "$(t display -p -c "$client" '#{client_key_table}')"
+echo "-- several clients"
+attach 4 50 second
+second=$client
+client=$main
+mark
+t send-keys -c "$main" -K C-b
+t send-keys -c "$second" -K C-b
+expect_drawn "a prefix on another client does not cancel the popup" "Enter group"
+key Escape
+t send-keys -c "$second" -K Escape
+wait_for table_is root "$second"
+if option_unset "@whichkey-seq-$second"; then
+	fail "no sequence number for the second client"
+else
+	pass "each client has its own sequence number"
+fi
+t detach-client -t "$second"
+exec 4>&-
+if wait_for option_unset "@whichkey-seq-$second"; then
+	pass "detaching removes the client's sequence number"
+else
+	fail "sequence number left behind after detach"
+fi
+
+echo "-- options"
+t set -g @whichkey-debug on
+t run-shell "$ROOT/whichkey.tmux"
+open "Enter group" C-b
+key Escape
+debug_log="$XDG_CACHE_HOME/whichkey-tmux/debug.log"
+logged() { grep -q "== .* $1" "$debug_log" 2>/dev/null; }
+if wait_for logged auto.sh && wait_for logged popup.sh; then
+	pass "@whichkey-debug traces the scripts"
+else
+	fail "@whichkey-debug: auto.sh or popup.sh missing from $debug_log"
+fi
+t set -g @whichkey-debug off
+t run-shell "$ROOT/whichkey.tmux"
+check "@whichkey-debug off stops tracing" "" "$(t show-environment -g WHICHKEY_TMUX_DEBUG 2>/dev/null | grep -v '^-')"
+
+t set -g @whichkey-auto off
+t run-shell "$ROOT/whichkey.tmux"
+check "turning auto off restores the prefix" C-b "$(t show -gv prefix)"
+check "turning auto off restores prefix2" C-a "$(t show -gv prefix2)"
+check "turning auto off restores send-prefix" send-prefix "$(binding prefix C-b)"
+check "turning auto off restores send-prefix -2" "send-prefix -2" "$(binding prefix C-a)"
+check "turning auto off unbinds the trigger" "" "$(binding root C-b)"
+
+t set -g @whichkey-auto on
+t run-shell "$ROOT/whichkey.tmux"
+t set -g prefix C-x
+t run-shell "$ROOT/whichkey.tmux"
+check "a new prefix is taken over" None "$(t show -gv prefix)"
+check "the old prefix key is released" "" "$(binding root C-b)"
+check "the old prefix gets send-prefix back" send-prefix "$(binding prefix C-b)"
+open "Enter group" C-x
+expect_drawn "the new prefix shows the popup" "Enter group"
+key Escape
 
 stop
 start 10 auto.conf
 open " prefix " C-b
 expect_drawn "popup too small for every binding says how many more" "more"
 key Escape
-
-t set -g @whichkey-auto off
-t run-shell "$ROOT/whichkey.tmux"
-check "turning auto off restores the prefix" C-b "$(t show -gv prefix)"
-check "turning auto off restores send-prefix" send-prefix "$(t list-keys -T prefix -F '#{key_command}' C-b)"
 
 [ "$failures" -eq 0 ] && echo "all passed" || echo "$failures failed"
 exit "$failures"

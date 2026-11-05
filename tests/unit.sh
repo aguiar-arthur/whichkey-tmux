@@ -49,18 +49,33 @@ truncate_label out "abcde" 5 "..."
 check "truncate_label keeps what fits" "abcde" "$out"
 
 echo "-- keys"
-for pair in 'Up 1b [A' 'Up 1b OA' 'Down 1b [B' 'Home 1b OH' 'C-Up 1b [1;5A' 'S-M-Left 1b [1;4D' \
-	'PPage 1b [5~' 'DC 1b [3~' 'BTab 1b [Z' 'M-a 1b a' 'M-; 1b ;' 'Enter 0d' 'Tab 09' \
-	'BSpace 7f' 'Space 20' 'C-Space 00' 'C-a 01' 'C-o 0f' 'C-z 1a' 'C-\ 1c' 'C-_ 1f' \
-	'q 71' '% 25' '; 3b' '" 22' "' 27" '\ 5c' '~ 7e'; do
+# What tmux sends a popup for each key (measured by typing into a real
+# client): Home and End arrive as [1~ and [4~, not [H and [F.
+for pair in 'Up 1b [A' 'Up 1b OA' 'Down 1b [B' 'Home 1b [1~' 'End 1b [4~' 'Home 1b OH' \
+	'End 1b [F' 'C-Up 1b [1;5A' 'M-S-Left 1b [1;4D' 'C-M-S-Right 1b [1;8C' 'C-Home 1b [1;5H' \
+	'PPage 1b [5~' 'NPage 1b [6~' 'IC 1b [2~' 'DC 1b [3~' 'C-DC 1b [3;5~' 'BTab 1b [Z' \
+	'F1 1b OP' 'F4 1b OS' 'C-F1 1b [1;5P' 'F5 1b [15~' 'S-F5 1b [15;2~' 'F12 1b [24~' \
+	'M-a 1b a' 'M-A 1b A' 'M-; 1b ;' 'M-O 1b O' 'M-[ 1b [' \
+	'Enter 0d' 'Tab 09' 'BSpace 7f' 'Space 20' 'C-Space 00' 'C-a 01' 'C-o 0f' 'C-z 1a' \
+	'C-\ 1c' 'C-_ 1f' 'q 71' '% 25' '; 3b' '" 22' "' 27" '\ 5c' '~ 7e'; do
 	set -- $pair
 	decode_key out "$2" "$3"
 	check "decode_key $2 $3" "$1" "$out"
 done
-decode_key out 1b ""
-check "decode_key lone Escape" "" "$out"
-decode_key out 1b "[99~"
-check "decode_key unknown sequence" "" "$out"
+for pair in 'C-M-a 01' 'M-Enter 0d' 'M-BSpace 7f' 'M-Space 20'; do
+	set -- $pair
+	printf -v byte "\\x$2"
+	decode_key out 1b "$byte"
+	check "decode_key Escape $2" "$1" "$out"
+done
+decode_key out c3 $'\xa9'
+check "decode_key UTF-8" "é" "$out"
+for rest in "" "[99~" "[2;9A" "[5A" "[1;5" "OX"; do
+	decode_key out 1b "$rest"
+	check "decode_key no key for Escape '$rest'" "" "$out"
+done
+needs_rest 1b && needs_rest c3 && ! needs_rest 61 && ! needs_rest 80 && r=yes || r=no
+check "needs_rest" yes "$r"
 
 for pair in '; 3b' 'a 61' '{ 7b' "' 27" '" 22'; do
 	set -- $pair
@@ -94,10 +109,14 @@ ms_to_seconds out 200
 check "ms_to_seconds 200" 0.200 "$out"
 ms_to_seconds out 1500
 check "ms_to_seconds 1500" 1.500 "$out"
-auto_command out "/dev/ttys001" "%1" "7"
+auto_command out "/dev/ttys001" "%1" 7
 eval "set -- $out"
 check "auto_command runs auto.sh" "$ROOT/scripts/auto.sh" "$1"
 check "auto_command arguments" "/dev/ttys001 %1 7 $WK_STATE_FORMAT" "$2 $3 $4 $5"
+seq_format out /dev/ttys001
+check "seq_format" '#{@whichkey-seq-/dev/ttys001}' "$out"
+send_prefix_command out prefix2
+check "send_prefix_command prefix2" "send-prefix -2" "$out"
 is_prefix_standin C-b "send-keys C-b" && r=yes || r=no
 check "is_prefix_standin" yes "$r"
 is_prefix_standin C-b "send-prefix" && r=yes || r=no

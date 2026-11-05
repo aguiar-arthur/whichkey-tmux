@@ -22,6 +22,10 @@ source "$CURRENT_DIR/lib/bindings.sh"
 source "$CURRENT_DIR/lib/keys.sh"
 # shellcheck source=lib/layout.sh
 source "$CURRENT_DIR/lib/layout.sh"
+# shellcheck source=lib/debug.sh
+source "$CURRENT_DIR/lib/debug.sh"
+
+debug_init "$@"
 
 SELF="$CURRENT_DIR/menu.sh"
 
@@ -43,6 +47,15 @@ read_settings() {
 	pos_x=${pos_x:-$WK_DEFAULT_X}
 	pos_y=${pos_y:-$WK_DEFAULT_Y}
 	label_width=${label_width:-$WK_DEFAULT_LABEL_WIDTH}
+
+	# =~ returns 2 for an invalid regex: say so instead of matching nothing.
+	if [ -n "$exclude" ]; then
+		[[ "" =~ $exclude ]]
+		if [ "$?" -eq 2 ]; then
+			tmux display-message -c "$client" "whichkey: @whichkey-exclude is not a valid regex: $exclude"
+			exclude=
+		fi
+	fi
 }
 
 # menu_command <var> <client> <pane> <table> <page>: tmux command that opens
@@ -137,10 +150,25 @@ order_items() {
 	fi
 }
 
+# free_key <var> <candidate>...: the first candidate no menu item uses, or
+# empty (the item is then chosen with the arrow keys).
+free_key() {
+	local _var=$1 _key _i
+	shift
+	for _key in "$@"; do
+		for ((_i = 0; _i < ${#ITEM_KEYS[@]}; _i++)); do
+			[ "${ITEM_KEYS[$_i]}" != "$_key" ] || continue 2
+		done
+		printf -v "$_var" '%s' "$_key"
+		return
+	done
+	printf -v "$_var" ''
+}
+
 # menu_args: display-menu arguments for the rows START..END of ORDER, plus
 # page navigation. Sets ARGS.
 menu_args() {
-	local i n nav
+	local i n nav key
 	ARGS=()
 	for ((i = START; i < END; i++)); do
 		n=${ORDER[$i]}
@@ -157,12 +185,14 @@ menu_args() {
 	if [ "$PAGE" -lt "$PAGES" ]; then
 		menu_command nav "$client" "$pane" "$table" $((PAGE + 1))
 		format_escape nav "$nav"
-		ARGS+=("Next page" C-n "$nav")
+		free_key key C-n NPage
+		ARGS+=("Next page" "$key" "$nav")
 	fi
 	if [ "$PAGE" -gt 1 ]; then
 		menu_command nav "$client" "$pane" "$table" $((PAGE - 1))
 		format_escape nav "$nav"
-		ARGS+=("Previous page" C-p "$nav")
+		free_key key C-p PPage
+		ARGS+=("Previous page" "$key" "$nav")
 	fi
 }
 

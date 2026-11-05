@@ -11,10 +11,15 @@ source "$LIB/options.sh"
 source "$LIB/tmux.sh"
 # shellcheck source=scripts/lib/automode.sh
 source "$LIB/automode.sh"
+# shellcheck source=scripts/lib/debug.sh
+source "$LIB/debug.sh"
 
-# Tables where the prefix key has to be bound by hand once the prefix option
-# is None: root, plus the copy-mode tables, which replace root in copy mode.
+# Tables where a prefix key has to be bound by hand once its option is None:
+# root, plus the copy-mode tables, which replace root in copy mode.
 PREFIX_TABLES="root copy-mode copy-mode-vi"
+
+# The options auto mode takes over.
+PREFIX_OPTIONS="prefix prefix2"
 
 # bind_menu_keys: @whichkey-key in the prefix table (and @whichkey-root-key,
 # if set, in the root table) opens the catalog menu.
@@ -33,70 +38,117 @@ bind_menu_keys() {
 	fi
 }
 
-# user_prefix <var>: the prefix key the user configured. While auto mode is
-# on the prefix option is None, so on a config reload fall back to the key
-# we saved.
+# user_prefix <var> <option>: the key the user configured for <option>
+# (prefix or prefix2), saved as @whichkey-<option>. While auto mode is on the
+# option is None, so on a config reload fall back to the saved key. If the
+# config now sets a different key, give the old one back first.
 user_prefix() {
-	local _prefix
-	_prefix=$(tmux show-option -gv prefix)
-	if [ "$_prefix" = None ]; then
-		_prefix=$(get_option @whichkey-prefix "")
+	local _key _saved
+	_key=$(tmux show-option -gv "$2")
+	_saved=$(get_option "@whichkey-$2" "")
+	if [ "$_key" = None ]; then
+		_key=$_saved
 	else
-		tmux set-option -g @whichkey-prefix "$_prefix"
+		if [ -n "$_saved" ] && [ "$_saved" != "$_key" ]; then
+			release_key "$_saved" "$2"
+		fi
+		tmux set-option -g "@whichkey-$2" "$_key"
 	fi
-	printf -v "$1" '%s' "$_prefix"
+	printf -v "$1" '%s' "$_key"
 }
 
-# prefix_trigger <var> <delay-ms>: what the prefix key runs in auto mode:
-# switch to the prefix table, bump a sequence number, note the state and
+# prefix_trigger <var> <delay-ms>: what a prefix key runs in auto mode:
+# switch to the prefix table, bump the sequence numbers, note the state and
 # check back after the delay (see scripts/auto.sh).
 prefix_trigger() {
 	local _seconds _run
 	ms_to_seconds _seconds "$2"
 	auto_command _run '#{client_name}' '#{pane_id}' '#{@whichkey-seq}'
 	tmux_quote _run "$_run"
-	printf -v "$1" '%s' "switch-client -T prefix ; set-option -gF @whichkey-seq '#{e|+:#{@whichkey-seq},1}' ; run-shell -b -d $_seconds $_run"
+	printf -v "$1" '%s' "switch-client -T prefix ;" \
+		" set-option -gF @whichkey-seq '#{e|+:#{@whichkey-seq},1}' ;" \
+		" set-option -gF '@whichkey-seq-#{client_name}' '#{@whichkey-seq}' ;" \
+		" run-shell -b -d $_seconds $_run"
+}
+
+# claim_key <key> <option> <trigger>: bind <key> to the trigger where tmux
+# would have handled it as <option>.
+claim_key() {
+	local table command send_prefix
+	for table in $PREFIX_TABLES; do
+		tmux bind-key -T "$table" "$1" "$3"
+	done
+	binding_command command prefix "$1"
+	send_prefix_command send_prefix "$2"
+	if [ "$command" = "$send_prefix" ]; then
+		bind_prefix_standin "$1"
+	fi
+}
+
+# release_key <key> <option>: undo claim_key.
+release_key() {
+	local table command send_prefix
+	for table in $PREFIX_TABLES; do
+		binding_command command "$table" "$1"
+		case $command in
+		*auto.sh*) tmux unbind-key -T "$table" "$1" ;;
+		esac
+	done
+	binding_command command prefix "$1"
+	if is_prefix_standin "$1" "$command"; then
+		send_prefix_command send_prefix "$2"
+		# shellcheck disable=SC2086 # "send-prefix -2" is two arguments
+		tmux bind-key -N "Send the prefix key" -T prefix "$1" $send_prefix
+	fi
 }
 
 # tmux switches to the prefix table internally, before any key binding, so
-# there is no event to hang a timer on. Instead, turn the prefix option off
-# and bind the key ourselves.
+# there is no event to hang a timer on. Instead, turn the prefix options off
+# and bind their keys ourselves.
 setup_auto() {
-	local prefix trigger table command
-	user_prefix prefix
-	[ -n "$prefix" ] || return
-
+	local trigger option key
 	prefix_trigger trigger "$(get_option @whichkey-delay "$WK_DEFAULT_DELAY")"
-	tmux set-option -g prefix None
-	for table in $PREFIX_TABLES; do
-		tmux bind-key -T "$table" "$prefix" "$trigger"
+	for option in $PREFIX_OPTIONS; do
+		user_prefix key "$option"
+		[ -n "$key" ] || continue
+		tmux set-option -g "$option" None
+		claim_key "$key" "$option" "$trigger"
 	done
-	binding_command command prefix "$prefix"
-	if [ "$command" = send-prefix ]; then
-		bind_prefix_standin "$prefix"
-	fi
+	tmux set-hook -g "$WK_DETACH_HOOK" "set-option -gqu '@whichkey-seq-#{hook_client}'"
 }
 
 # Undo setup_auto after the option is turned off and the config reloaded.
 teardown_auto() {
-	local prefix table command
-	prefix=$(get_option @whichkey-prefix "")
-	[ -n "$prefix" ] && [ "$(tmux show-option -gv prefix)" = None ] || return
-
-	tmux set-option -g prefix "$prefix"
-	for table in $PREFIX_TABLES; do
-		binding_command command "$table" "$prefix"
-		case $command in
-		*auto.sh*) tmux unbind-key -T "$table" "$prefix" ;;
-		esac
+	local option key
+	for option in $PREFIX_OPTIONS; do
+		key=$(get_option "@whichkey-$option" "")
+		[ -n "$key" ] && [ "$(tmux show-option -gv "$option")" = None ] || continue
+		tmux set-option -g "$option" "$key"
+		release_key "$key" "$option"
 	done
-	binding_command command prefix "$prefix"
-	if is_prefix_standin "$prefix" "$command"; then
-		tmux bind-key -N "Send the prefix key" -T prefix "$prefix" send-prefix
-	fi
+	tmux set-hook -gu "$WK_DETACH_HOOK" 2>/dev/null
+}
+
+# apply_debug_option: start or stop the debug log. Each reload with it on
+# starts a fresh log.
+apply_debug_option() {
+	case $(get_option @whichkey-debug "$WK_DEFAULT_DEBUG") in
+	on | yes | 1)
+		mkdir -p "${WK_DEBUG_LOG%/*}"
+		: >"$WK_DEBUG_LOG"
+		tmux set-environment -g WHICHKEY_TMUX_DEBUG "$WK_DEBUG_LOG"
+		WHICHKEY_TMUX_DEBUG=$WK_DEBUG_LOG
+		;;
+	*)
+		tmux set-environment -gu WHICHKEY_TMUX_DEBUG 2>/dev/null
+		WHICHKEY_TMUX_DEBUG=
+		;;
+	esac
+	debug_init
 }
 
 main() {
+	apply_debug_option
 	if ! tmux_version_at_least 3 4; then
 		tmux display-message "whichkey-tmux: requires tmux 3.4 or newer"
 		return

@@ -15,6 +15,10 @@ source "$CURRENT_DIR/lib/quote.sh"
 source "$CURRENT_DIR/lib/keys.sh"
 # shellcheck source=lib/automode.sh
 source "$CURRENT_DIR/lib/automode.sh"
+# shellcheck source=lib/debug.sh
+source "$CURRENT_DIR/lib/debug.sh"
+
+debug_init "$@"
 
 client=$1
 pane=$2
@@ -43,9 +47,9 @@ read_byte() {
 read_key() {
 	local _byte _rest=
 	_byte=$(read_byte)
-	if [ "$_byte" = 1b ]; then
-		# A lone Escape closes; otherwise read the rest of the sequence,
-		# which arrives within a tenth of a second.
+	if needs_rest "$_byte"; then
+		# The rest of an escape sequence or character arrives within a
+		# tenth of a second; a lone Escape gets nothing more.
 		stty min 0 time 1
 		_rest=$(dd bs=16 count=1 2>/dev/null)
 	fi

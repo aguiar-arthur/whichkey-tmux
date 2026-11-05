@@ -6,8 +6,8 @@
 #
 # Usage: auto.sh <client> <pane> <seq> <state>
 #
-# <seq> is @whichkey-seq when the prefix was pressed; a newer prefix press
-# cancels this run. <state> is WK_STATE_FORMAT expanded at the same moment.
+# <seq> is the client's sequence number (see lib/automode.sh) when the prefix
+# was pressed; a newer prefix press on the same client cancels this run. <state> is WK_STATE_FORMAT expanded at the same moment.
 # tmux has no "a key was pressed" signal, and after a repeat (-r) binding the
 # client stays in the prefix table, so a changed state is how we tell that a
 # key did something (resized, moved to another pane or window...).
@@ -28,6 +28,10 @@ source "$CURRENT_DIR/lib/bindings.sh"
 source "$CURRENT_DIR/lib/layout.sh"
 # shellcheck source=lib/automode.sh
 source "$CURRENT_DIR/lib/automode.sh"
+# shellcheck source=lib/debug.sh
+source "$CURRENT_DIR/lib/debug.sh"
+
+debug_init "$@"
 
 client=$1
 pane=$2
@@ -37,14 +41,15 @@ state=$4
 # Space between columns.
 GAP=4
 
-# still_waiting <var> <client> <seq> <state>: sets <var> to the client's key
-# table and succeeds if the popup should still be shown: the client is in a
-# table other than root, with no newer prefix press and no change of state.
+# still_waiting <var>: sets <var> to the client's key table and succeeds if
+# the popup should still be shown: the client is in a table other than root,
+# with no newer prefix press and no change of state.
 still_waiting() {
-	local _table _seq _state
-	read_formats "$2" _table '#{client_key_table}' _seq '#{@whichkey-seq}' _state "$WK_STATE_FORMAT"
+	local _table _seq _state _seq_format
+	seq_format _seq_format "$client"
+	read_formats "$client" _table '#{client_key_table}' _seq "$_seq_format" _state "$WK_STATE_FORMAT"
 	printf -v "$1" '%s' "$_table"
-	[ "$_table" != root ] && [ "$_seq" = "$3" ] && [ "$_state" = "$4" ]
+	[ "$_table" != root ] && [ "$_seq" = "$seq" ] && [ "$_state" = "$state" ]
 }
 
 # read_settings: the client size and every option, in one round-trip.
@@ -54,6 +59,7 @@ read_settings() {
 		height '#{client_height}' \
 		version '#{version}' \
 		prefix '#{@whichkey-prefix}' \
+		prefix2 '#{@whichkey-prefix2}' \
 		label_width '#{@whichkey-label-width}' \
 		delay '#{@whichkey-delay}'
 	label_width=${label_width:-$WK_DEFAULT_LABEL_WIDTH}
@@ -71,12 +77,13 @@ select_cells() {
 	for ((i = 0; i < ${#WK_KEYS[@]}; i++)); do
 		[ "${WK_IS_USER[$i]}" = 1 ] || continue
 		key=${WK_KEYS[$i]}
-		[ "$key" = "$prefix" ] && is_prefix_standin "$prefix" "${WK_COMMANDS[$i]}" && continue
+		# Our stand-ins for send-prefix (see whichkey.tmux) are plumbing.
+		case $key in
+		"$prefix" | "$prefix2") is_prefix_standin "$key" "${WK_COMMANDS[$i]}" && continue ;;
+		esac
 
 		binding_label label "$i"
-		# "..." rather than "…": bash 3.2's printf pads by bytes, so a
-		# multibyte character would misalign the columns.
-		truncate_label label "$label" "$label_width" "..."
+		truncate_label label "$label" "$label_width" "…"
 		if [ -n "${WK_GROUP[$i]}" ]; then
 			CELL_IS_GROUP+=(1)
 			GROUP_KEYS="$GROUP_KEYS$key "
@@ -94,7 +101,7 @@ select_cells() {
 # render_grid: print the grid laid out by grid_layout, each cell as
 # "key → label", with one space of padding.
 render_grid() {
-	local r c i line color total=${#CELL_KEYS[@]}
+	local r c i line color key label total=${#CELL_KEYS[@]}
 	local key_color=$'\e[1;35m' group_color=$'\e[34m' dim=$'\e[2m' reset=$'\e[0m'
 	for ((r = 0; r < ROWS; r++)); do
 		line=" "
@@ -104,9 +111,12 @@ render_grid() {
 			if [ "$i" -lt "$SHOWN" ]; then
 				color=$reset
 				[ "${CELL_IS_GROUP[$i]}" = 1 ] && color=$group_color
-				printf -v line '%s%s%*s%s %s→%s %s%-*s%s' "$line" \
-					"$key_color" "$KEY_WIDTH" "${CELL_KEYS[$i]}" "$reset" \
-					"$dim" "$reset" "$color" "$TEXT_WIDTH" "${CELL_LABELS[$i]}" "$reset"
+				# Pad by hand: printf pads by bytes, which misaligns
+				# multibyte characters such as accented letters.
+				key=${CELL_KEYS[$i]} label=${CELL_LABELS[$i]}
+				printf -v line '%s%*s%s%s%s %s→%s %s%s%s%*s' "$line" \
+					$((KEY_WIDTH - ${#key})) '' "$key_color" "$key" "$reset" \
+					"$dim" "$reset" "$color" "$label" "$reset" $((TEXT_WIDTH - ${#label})) ''
 			elif [ "$i" -eq "$SHOWN" ] && [ "$SHOWN" -lt "$total" ]; then
 				printf -v line '%s%s… %d more%s' "$line" "$dim" $((total - SHOWN)) "$reset"
 			fi
@@ -120,7 +130,7 @@ render_grid() {
 show_popup() {
 	local now popup_width
 	# A key pressed while we were building the grid already ran its binding.
-	if ! still_waiting now "$client" "$seq" "$state" || [ "$now" != "$table" ]; then
+	if ! still_waiting now || [ "$now" != "$table" ]; then
 		rm -f "$1"
 		return
 	fi
@@ -135,7 +145,7 @@ show_popup() {
 
 main() {
 	local max_rows content
-	still_waiting table "$client" "$seq" "$state" || return
+	still_waiting table || return
 	read_settings
 	load_bindings "$table" "$version"
 	select_cells || return
