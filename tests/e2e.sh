@@ -9,6 +9,8 @@
 # Usage: tests/e2e.sh
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../scripts/lib/keys.sh
+source "$ROOT/scripts/lib/keys.sh"
 SOCKET="whichkey-test-$$"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/whichkey-test.XXXXXX")
 LOG="$WORK/client.log"
@@ -103,10 +105,7 @@ drawn() { tail -c +$((log_mark + 1)) "$LOG" | LC_ALL=C grep -aqF -- "$1"; }
 key() {
 	local k code
 	for k in "$@"; do
-		# Hex for single characters: the tmux CLI gives ";" and "{"
-		# special meaning as bare arguments.
-		if [ "${#k}" -eq 1 ]; then
-			printf -v code '%02x' "'$k"
+		if key_hex code "$k"; then
 			t send-keys -c "$client" -K -H "$code"
 		else
 			t send-keys -c "$client" -K "$k"

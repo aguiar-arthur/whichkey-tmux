@@ -81,12 +81,32 @@ bind -N "Lazygit" G display-popup -E lazygit
 | `@whichkey-auto` | `off` | Show the popup after a pause on the prefix |
 | `@whichkey-delay` | `200` | Milliseconds to wait before the auto popup |
 
+## Code layout
+
+```
+whichkey.tmux        entry point: binds the menu key, turns auto mode on/off
+scripts/menu.sh      the catalog menu (prefix Space)
+scripts/auto.sh      auto mode: decides whether to show the popup, lays out the grid
+scripts/popup.sh     runs inside the popup: reads one key and forwards it
+scripts/lib/
+  quote.sh           quoting for tmux, formats and sh (pure)
+  options.sh         defaults for every @whichkey-* option
+  tmux.sh            queries to the tmux server
+  bindings.sh        parses a key table; tells your bindings from tmux's defaults
+  keys.sh            terminal bytes -> key names, and how to send a key (pure)
+  layout.sh          pagination and grid arithmetic (pure)
+  automode.sh        shared by the prefix trigger, auto.sh and popup.sh
+```
+
+Everything must run on bash 3.2 (macOS `/bin/bash`).
+
 ## Tests
 
 ```sh
-tests/e2e.sh
+tests/unit.sh   # the lib/ functions, no tmux server, under a second
+tests/e2e.sh    # the real thing, about 20 seconds
 ```
 
-Starts a private tmux server with a real attached client (macOS `script`),
-drives the menu and the auto popup with simulated keypresses and checks the
-bindings fire.
+`e2e.sh` starts a private tmux server with a real attached client (macOS
+`script`), drives the menu and the auto popup with simulated keypresses and
+checks the bindings fire.
