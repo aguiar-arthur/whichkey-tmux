@@ -28,6 +28,8 @@ source "$CURRENT_DIR/lib/bindings.sh"
 source "$CURRENT_DIR/lib/layout.sh"
 # shellcheck source=lib/automode.sh
 source "$CURRENT_DIR/lib/automode.sh"
+# shellcheck source=lib/style.sh
+source "$CURRENT_DIR/lib/style.sh"
 # shellcheck source=lib/debug.sh
 source "$CURRENT_DIR/lib/debug.sh"
 
@@ -61,9 +63,15 @@ read_settings() {
 		prefix '#{@whichkey-prefix}' \
 		prefix2 '#{@whichkey-prefix2}' \
 		label_width '#{@whichkey-label-width}' \
-		delay '#{@whichkey-delay}'
+		delay '#{@whichkey-delay}' \
+		key_style '#{@whichkey-key-style}' \
+		group_style '#{@whichkey-group-style}' \
+		border_lines '#{@whichkey-border-lines}'
 	label_width=${label_width:-$WK_DEFAULT_LABEL_WIDTH}
 	delay=${delay:-$WK_DEFAULT_DELAY}
+	border_lines=${border_lines:-$WK_DEFAULT_BORDER_LINES}
+	style_sgr key_sgr "${key_style:-$WK_DEFAULT_KEY_STYLE}"
+	style_sgr group_sgr "${group_style:-$WK_DEFAULT_GROUP_STYLE}"
 }
 
 # select_cells: one cell per binding your config defines, as CELL_KEYS,
@@ -102,7 +110,7 @@ select_cells() {
 # "key → label", with one space of padding.
 render_grid() {
 	local r c i line color key label total=${#CELL_KEYS[@]}
-	local key_color=$'\e[1;35m' group_color=$'\e[34m' dim=$'\e[2m' reset=$'\e[0m'
+	local dim=$'\e[2m' reset=$'\e[0m'
 	for ((r = 0; r < ROWS; r++)); do
 		line=" "
 		for ((c = 0; c < COLS; c++)); do
@@ -110,12 +118,12 @@ render_grid() {
 			[ "$c" -eq 0 ] || [ "$i" -gt "$SHOWN" ] || printf -v line '%s%*s' "$line" "$GAP" ''
 			if [ "$i" -lt "$SHOWN" ]; then
 				color=$reset
-				[ "${CELL_IS_GROUP[$i]}" = 1 ] && color=$group_color
+				[ "${CELL_IS_GROUP[$i]}" = 1 ] && color=$group_sgr
 				# Pad by hand: printf pads by bytes, which misaligns
 				# multibyte characters such as accented letters.
 				key=${CELL_KEYS[$i]} label=${CELL_LABELS[$i]}
 				printf -v line '%s%*s%s%s%s %s→%s %s%s%s%*s' "$line" \
-					$((KEY_WIDTH - ${#key})) '' "$key_color" "$key" "$reset" \
+					$((KEY_WIDTH - ${#key})) '' "$key_sgr" "$key" "$reset" \
 					"$dim" "$reset" "$color" "$label" "$reset" $((TEXT_WIDTH - ${#label})) ''
 			elif [ "$i" -eq "$SHOWN" ] && [ "$SHOWN" -lt "$total" ]; then
 				printf -v line '%s%s… %d more%s' "$line" "$dim" $((total - SHOWN)) "$reset"
@@ -136,7 +144,7 @@ show_popup() {
 	fi
 	popup_width=$((COLS * CELL + (COLS - 1) * GAP + 4))
 	[ "$popup_width" -le "$width" ] || popup_width=$width
-	tmux display-popup -c "$client" -t "$pane" -E -b rounded -T " $table " \
+	tmux display-popup -c "$client" -t "$pane" -E -b "$border_lines" -T " $table " \
 		-x C -y S -w "$popup_width" -h $((ROWS + 2)) \
 		"$CURRENT_DIR/popup.sh" "$client" "$pane" "$table" "$1" \
 		"$seq" "$delay" "$GROUP_KEYS" ||

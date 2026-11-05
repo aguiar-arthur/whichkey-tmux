@@ -13,6 +13,7 @@ source "$LIB/bindings.sh"
 source "$LIB/keys.sh"
 source "$LIB/layout.sh"
 source "$LIB/automode.sh"
+source "$LIB/style.sh"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/whichkey-unit.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
@@ -121,6 +122,15 @@ is_prefix_standin C-b "send-keys C-b" && r=yes || r=no
 check "is_prefix_standin" yes "$r"
 is_prefix_standin C-b "send-prefix" && r=yes || r=no
 check "is_prefix_standin send-prefix" no "$r"
+
+echo "-- style"
+for pair in 'fg=magenta,bold|\e[0;35;1m' 'fg=blue|\e[0;34m' 'bg=red dim|\e[0;41;2m' \
+	'fg=brightcyan|\e[0;96m' 'fg=colour208|\e[0;38;5;208m' 'fg=color8|\e[0;38;5;8m' \
+	'fg=#bd93f9,italics|\e[0;38;2;189;147;249;3m' 'default|\e[0m' '|\e[0m' 'fg=nope,bold|\e[0;1m'; do
+	style_sgr out "${pair%%|*}"
+	printf -v want '%b' "${pair#*|}"
+	check "style_sgr ${pair%%|*}" "$want" "$out"
+done
 
 echo "-- tmux queries (fake tmux)"
 tmux() { printf 'a%s%sc d\n' "$WK_SEP" "$WK_SEP"; }
