@@ -16,6 +16,15 @@ body:
       description: The whichkey options and the bindings involved.
       render: tmux
   - type: input
+    id: commit
+    attributes:
+      label: whichkey-tmux commit
+      description: >
+        Output of `git -C ~/.tmux/plugins/whichkey-tmux rev-parse --short HEAD`
+        (or the path where you cloned it)
+    validations:
+      required: true
+  - type: input
     id: tmux
     attributes:
       label: tmux version
