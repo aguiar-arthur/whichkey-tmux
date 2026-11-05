@@ -4,7 +4,7 @@
 # colour_sgr <var> <colour> <base>: SGR parameters for a tmux colour, with
 # <base> 30 for foreground or 40 for background. Empty if not understood.
 colour_sgr() {
-	local _name=$2 _base=$3 _n= _hex
+	local _name=$2 _base=$3 _n='' _hex
 	# brightred etc. are the basic colours 60 higher.
 	case $_name in bright*)
 		_name=${_name#bright}

@@ -17,7 +17,7 @@ get_option() {
 # read_formats <client> <var> <format> [<var> <format>...]: expand every
 # format for <client> in one round-trip and assign each result to its <var>.
 read_formats() {
-	local _client=$1 _format= _vars=() _values=() _i
+	local _client=$1 _format='' _vars=() _values=() _i
 	shift
 	while [ "$#" -ge 2 ]; do
 		_vars+=("$1")

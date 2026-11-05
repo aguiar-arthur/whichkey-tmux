@@ -144,6 +144,7 @@ apply_debug_option() {
 		WHICHKEY_TMUX_DEBUG=
 		;;
 	esac
+	# shellcheck disable=SC2119 # no arguments to log
 	debug_init
 }
 

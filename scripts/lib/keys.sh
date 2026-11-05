@@ -27,7 +27,9 @@ needs_rest() {
 # <rest> the bytes that followed it (see needs_rest). Sets <var> empty for a
 # lone Escape and for input with no key name.
 decode_key() {
-	local _key=
+	local _key=''
+	# SC1003: 'C-\' is meant. SC2059: \xNN in a printf format decodes a byte.
+	# shellcheck disable=SC1003,SC2059
 	case $2 in
 	1b) decode_escape _key "$3" ;;
 	0d) _key=Enter ;;
@@ -55,7 +57,7 @@ decode_key() {
 
 # decode_escape <var> <rest>: key name for Escape followed by <rest>.
 decode_escape() {
-	local _inner= _hex _final _params _code= _mod=1 _base=
+	local _inner='' _hex _final _params _code='' _mod=1 _base=''
 	case $2 in
 	'') ;; # A lone Escape.
 	?)

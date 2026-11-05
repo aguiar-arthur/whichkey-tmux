@@ -4,6 +4,11 @@
 #
 # Usage: tests/unit.sh
 
+# shellcheck source-path=SCRIPTDIR/../scripts/lib
+# The pair loops split "$pair" into words on purpose (SC2086, SC2089,
+# SC2090), and decode bytes with \xNN printf formats (SC2059).
+# shellcheck disable=SC2086,SC2089,SC2090,SC2059
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB="$ROOT/scripts/lib"
 source "$LIB/quote.sh"
@@ -39,6 +44,7 @@ argv_escape out 'M-;'
 check "argv_escape trailing ;" 'M-\;' "$out"
 argv_escape out 'a;b'
 check "argv_escape inner ; untouched" 'a;b' "$out"
+# shellcheck disable=SC2016 # literal $ and backticks on purpose
 for s in "plain" "it's" "a b  c" '$(x) `y` \z'; do
 	sh_quote out "$s"
 	eval "set -- $out"

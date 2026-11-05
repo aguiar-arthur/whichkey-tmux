@@ -1,12 +1,12 @@
 # Defaults for every @whichkey-* option, in one place.
 
-WK_DEFAULT_KEY=Space       # @whichkey-key
-WK_DEFAULT_X=C             # @whichkey-x
-WK_DEFAULT_Y=S             # @whichkey-y
-WK_DEFAULT_LABEL_WIDTH=40  # @whichkey-label-width
-WK_DEFAULT_AUTO=off        # @whichkey-auto
-WK_DEFAULT_DELAY=200       # @whichkey-delay, in milliseconds
-WK_DEFAULT_DEBUG=off       # @whichkey-debug
+WK_DEFAULT_KEY=Space      # @whichkey-key
+WK_DEFAULT_X=C            # @whichkey-x
+WK_DEFAULT_Y=S            # @whichkey-y
+WK_DEFAULT_LABEL_WIDTH=40 # @whichkey-label-width
+WK_DEFAULT_AUTO=off       # @whichkey-auto
+WK_DEFAULT_DELAY=200      # @whichkey-delay, in milliseconds
+WK_DEFAULT_DEBUG=off      # @whichkey-debug
 
 # The auto popup.
 WK_DEFAULT_KEY_STYLE='fg=magenta,bold' # @whichkey-key-style

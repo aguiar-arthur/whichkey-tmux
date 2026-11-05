@@ -1,0 +1,11 @@
+# Follow `source` relative to each script.
+source-path=SCRIPTDIR
+external-sources=true
+# lib/ files are sourced, so they have no shebang.
+shell=bash
+
+# Helpers return values by assigning to the variable named by their first
+# argument (printf -v), which shellcheck cannot see: it would report those
+# variables as unassigned (SC2154), and lib/ variables and functions used by
+# other files as unused (SC2034, SC2329).
+disable=SC2154,SC2034,SC2329
