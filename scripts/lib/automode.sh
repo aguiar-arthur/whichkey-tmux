@@ -27,17 +27,22 @@ ms_to_seconds() {
 	printf -v "$1" '%d.%03d' $(($2 / 1000)) $(($2 % 1000))
 }
 
-# auto_command <var> <client> <pane> <seq>: shell command for run-shell that
-# runs auto.sh. The arguments may be formats; WK_STATE_FORMAT always is, so
-# the state is captured when run-shell runs, not after its delay.
+# auto_command <var> <client> <pane> <seq> [<path>]: shell command for
+# run-shell that runs auto.sh. <client>, <pane> and <seq> may be formats;
+# WK_STATE_FORMAT always is, so the state is captured when run-shell runs,
+# not after its delay. <path> is literal: the tables above the one the popup
+# will show, space-separated (group names never contain a space, see
+# WK_GROUP_RE).
 auto_command() {
-	local _auto _client _pane _seq
+	local _auto _client _pane _seq _path
 	sh_quote _auto "$WK_AUTO_SH"
 	format_escape _auto "$_auto"
 	sh_quote _client "$2"
 	sh_quote _pane "$3"
 	sh_quote _seq "$4"
-	printf -v "$1" "%s %s %s %s '%s'" "$_auto" "$_client" "$_pane" "$_seq" "$WK_STATE_FORMAT"
+	sh_quote _path "$5"
+	format_escape _path "$_path"
+	printf -v "$1" "%s %s %s %s '%s' %s" "$_auto" "$_client" "$_pane" "$_seq" "$WK_STATE_FORMAT" "$_path"
 }
 
 # send_prefix_command <var> <option>: the binding that sends the key of
