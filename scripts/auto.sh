@@ -4,10 +4,13 @@
 # nothing happened since, pop up the bindings your config defines there,
 # laid out in columns.
 #
-# Usage: auto.sh <client> <pane> <seq> <state>
+# Usage: auto.sh <client> <pane> <seq> <state> [<path>]
 #
 # <seq> is the client's sequence number (see lib/automode.sh) when the prefix
-# was pressed; a newer prefix press on the same client cancels this run. <state> is WK_STATE_FORMAT expanded at the same moment.
+# was pressed; a newer prefix press on the same client cancels this run.
+# <state> is WK_STATE_FORMAT expanded at the same moment. <path> lists the
+# tables above this one, space-separated, when a group key led here: the
+# popup's title shows it, and BSpace goes back up.
 # tmux has no "a key was pressed" signal, and after a repeat (-r) binding the
 # client stays in the prefix table, so a changed state is how we tell that a
 # key did something (resized, moved to another pane or window...).
@@ -39,6 +42,7 @@ client=$1
 pane=$2
 seq=$3
 state=$4
+path=$5
 
 # Space between columns.
 GAP=4
@@ -66,45 +70,75 @@ read_settings() {
 		delay '#{@whichkey-delay}' \
 		key_style '#{@whichkey-key-style}' \
 		group_style '#{@whichkey-group-style}' \
-		border_lines '#{@whichkey-border-lines}'
+		border_lines '#{@whichkey-border-lines}' \
+		exclude '#{@whichkey-exclude}' \
+		popup_defaults '#{@whichkey-popup-defaults}'
 	WK_TMUX_VERSION=$version
 	label_width=${label_width:-$WK_DEFAULT_LABEL_WIDTH}
 	delay=${delay:-$WK_DEFAULT_DELAY}
 	border_lines=${border_lines:-$WK_DEFAULT_BORDER_LINES}
+	popup_defaults=${popup_defaults:-$WK_DEFAULT_POPUP_DEFAULTS}
 	style_sgr key_sgr "${key_style:-$WK_DEFAULT_KEY_STYLE}"
 	style_sgr group_sgr "${group_style:-$WK_DEFAULT_GROUP_STYLE}"
 }
 
-# select_cells: one cell per binding your config defines, as CELL_KEYS,
+# add_cell <index>: add binding <index> to the cells: CELL_KEYS,
 # CELL_LABELS and CELL_IS_GROUP; their widest key and label as KEY_WIDTH and
 # TEXT_WIDTH; and GROUP_KEYS, the group keys as a space-separated list with
-# leading and trailing spaces. Fails if there are none.
+# leading and trailing spaces.
+add_cell() {
+	local key=${WK_KEYS[$1]} label
+	binding_label label "$1"
+	truncate_label label "$label" "$label_width" "…"
+	if [ -n "${WK_GROUP[$1]}" ]; then
+		CELL_IS_GROUP+=(1)
+		GROUP_KEYS="$GROUP_KEYS$key "
+	else
+		CELL_IS_GROUP+=(0)
+	fi
+	CELL_KEYS+=("$key")
+	CELL_LABELS+=("$label")
+	[ "${#key}" -le "$KEY_WIDTH" ] || KEY_WIDTH=${#key}
+	[ "${#label}" -le "$TEXT_WIDTH" ] || TEXT_WIDTH=${#label}
+}
+
+# select_cells: a cell (add_cell) for each binding your config defines,
+# then, as @whichkey-popup-defaults says, for tmux's own. Sets BACK to 1 if
+# BSpace should go back up the path. Fails if there are no cells.
 select_cells() {
-	local i key label
+	local i key yours=0
 	CELL_KEYS=() CELL_LABELS=() CELL_IS_GROUP=()
-	GROUP_KEYS=" " KEY_WIDTH=0 TEXT_WIDTH=0
+	GROUP_KEYS=" " KEY_WIDTH=0 TEXT_WIDTH=0 BACK=0
+	[ -z "$path" ] || BACK=1
 	for ((i = 0; i < ${#WK_KEYS[@]}; i++)); do
-		[ "${WK_IS_USER[$i]}" = 1 ] || continue
 		key=${WK_KEYS[$i]}
+		[ "$key" != BSpace ] || BACK=0
+		[ "${WK_IS_USER[$i]}" = 1 ] || continue
 		# Our stand-ins for send-prefix (see whichkey.tmux) are plumbing.
 		case $key in
 		"$prefix" | "$prefix2") is_prefix_standin "$key" "${WK_COMMANDS[$i]}" && continue ;;
 		esac
-
-		binding_label label "$i"
-		truncate_label label "$label" "$label_width" "…"
-		if [ -n "${WK_GROUP[$i]}" ]; then
-			CELL_IS_GROUP+=(1)
-			GROUP_KEYS="$GROUP_KEYS$key "
-		else
-			CELL_IS_GROUP+=(0)
-		fi
-		CELL_KEYS+=("$key")
-		CELL_LABELS+=("$label")
-		[ "${#key}" -le "$KEY_WIDTH" ] || KEY_WIDTH=${#key}
-		[ "${#label}" -le "$TEXT_WIDTH" ] || TEXT_WIDTH=${#label}
+		add_cell "$i"
+		# The plugin's own keys (the catalog, the search) do not make a
+		# config: a fresh install still gets tmux's bindings.
+		case ${WK_COMMANDS[$i]} in *"$CURRENT_DIR/"*) ;; *) yours=$((yours + 1)) ;; esac
 	done
+	if want_defaults "$yours"; then
+		for ((i = 0; i < ${#WK_KEYS[@]}; i++)); do
+			[ "${WK_IS_USER[$i]}" = 0 ] && ! is_excluded "$i" "$exclude" && add_cell "$i"
+		done
+	fi
 	[ "${#CELL_KEYS[@]}" -gt 0 ]
+}
+
+# want_defaults <yours>: whether tmux's own bindings join the popup, given
+# how many of yours it shows (@whichkey-popup-defaults).
+want_defaults() {
+	case $popup_defaults in
+	on | yes | 1) return 0 ;;
+	off | no | 0) return 1 ;;
+	esac
+	[ "$1" -eq 0 ]
 }
 
 # render_grid: print the grid laid out by grid_layout, each cell as
@@ -144,13 +178,15 @@ show_popup() {
 		return
 	fi
 	popup_width=$((COLS * CELL + (COLS - 1) * GAP + 4))
-	# The title is a format: a "#" in the table name must stay literal.
-	format_escape title " $table "
+	# The path leading here, then this table: " prefix › window ". The
+	# title is a format: a "#" in a table name must stay literal.
+	title="${path:+${path// / › } › }$table"
+	format_escape title " $title "
 	[ "$popup_width" -le "$width" ] || popup_width=$width
 	tmux display-popup -c "$client" -t "$pane" -E -b "$border_lines" -T "$title" \
 		-x C -y S -w "$popup_width" -h $((ROWS + 2)) \
 		"$CURRENT_DIR/popup.sh" "$client" "$pane" "$table" "$1" \
-		"$seq" "$delay" "$GROUP_KEYS" ||
+		"$seq" "$delay" "$GROUP_KEYS" "$path" "$BACK" ||
 		rm -f "$1"
 }
 

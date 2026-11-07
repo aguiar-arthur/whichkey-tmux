@@ -19,6 +19,8 @@ source "$LIB/keys.sh"
 source "$LIB/layout.sh"
 source "$LIB/automode.sh"
 source "$LIB/style.sh"
+source "$LIB/match.sh"
+source "$LIB/input.sh"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/whichkey-unit.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
@@ -94,6 +96,23 @@ check "key_hex named key" no "$r"
 key_hex out "é" && r=yes || r=no
 check "key_hex non-ASCII" no "$r"
 
+# read_key on a pipe: stty has no terminal to set there.
+stty() { :; }
+read_keys() {
+	local key out=''
+	while :; do
+		read_key key
+		[ -n "$key" ] || break
+		out="$out$key "
+	done
+	printf '%s' "$out"
+}
+check "read_key: two arrows sent together are two keys" "Down Down Up " "$(printf '\033[B\033[B\033OA' | read_keys)"
+check "read_key: modified keys, then a character" "C-Up F5 x " "$(printf '\033[1;5A\033[15~x' | read_keys)"
+check "read_key: Meta, then a UTF-8 character" "M-a é " "$(printf '\033aé' | read_keys)"
+check "read_key: a lone Escape is empty" "" "$(printf '\033' | read_keys)"
+unset -f stty
+
 echo "-- layout"
 paginate 10 20 1
 check "paginate: fits on one page" "10 1 1 0 10" "$PER_PAGE $PAGES $PAGE $START $END"
@@ -111,6 +130,34 @@ check "grid_layout: overflow keeps a cell for the count" "4 5 19" "$COLS $ROWS $
 grid_layout 3 200 4 100 5
 check "grid_layout: at least one column" "1 3 3" "$COLS $ROWS $SHOWN"
 
+scroll_top out 3 0 10
+check "scroll_top: a visible row does not scroll" 0 "$out"
+scroll_top out 12 0 10
+check "scroll_top: scrolls down just enough" 3 "$out"
+scroll_top out 2 5 10
+check "scroll_top: scrolls up to the row" 2 "$out"
+scroll_top out 0 5 3
+check "scroll_top: back to the top" 0 "$out"
+
+echo "-- match"
+fuzzy_pattern pattern "sw"
+match_rank out "Split window" "sw" "$pattern"
+check "match_rank: characters in order" 1 "$out"
+fuzzy_pattern pattern "WIN"
+match_rank out "Split window" "WIN" "$pattern"
+check "match_rank: substring, any case" 0 "$out"
+fuzzy_pattern pattern "ws"
+match_rank out "Split window" "ws" "$pattern"
+check "match_rank: characters out of order" "" "$out"
+fuzzy_pattern pattern "*["
+match_rank out "a*b[" "*[" "$pattern"
+check "match_rank: * and [ are literal" 1 "$out"
+match_rank out "plain" "*[" "$pattern"
+check "match_rank: * does not match anything" "" "$out"
+fuzzy_pattern pattern ""
+match_rank out "anything" "" "$pattern"
+check "match_rank: an empty query matches" 0 "$out"
+
 echo "-- automode"
 ms_to_seconds out 200
 check "ms_to_seconds 200" 0.200 "$out"
@@ -120,6 +167,11 @@ auto_command out "/dev/ttys001" "%1" 7
 eval "set -- $out"
 check "auto_command runs auto.sh" "$ROOT/scripts/auto.sh" "$1"
 check "auto_command arguments" "/dev/ttys001 %1 7 $WK_STATE_FORMAT" "$2 $3 $4 $5"
+check "auto_command without a path" "6 " "$# $6"
+auto_command out "/dev/ttys001" "%1" 7 "prefix g#1"
+eval "set -- $out"
+# run-shell expands formats: a "#" in the path is doubled.
+check "auto_command path" "prefix g##1" "$6"
 seq_format out /dev/ttys001
 check "seq_format" '#{@whichkey-seq-/dev/ttys001}' "$out"
 send_prefix_command out prefix2
@@ -128,6 +180,11 @@ is_prefix_standin C-b "send-keys C-b" && r=yes || r=no
 check "is_prefix_standin" yes "$r"
 is_prefix_standin C-b "send-prefix" && r=yes || r=no
 check "is_prefix_standin send-prefix" no "$r"
+
+press_args /dev/ttys001 prefix '$'
+check "press_args: ASCII as hex" "switch-client -c /dev/ttys001 -T prefix ; send-keys -c /dev/ttys001 -K -H 24" "${PRESS[*]}"
+press_args /dev/ttys001 root 'M-;'
+check "press_args: a named key, ; escaped" 'switch-client -c /dev/ttys001 -T root ; send-keys -c /dev/ttys001 -K M-\;' "${PRESS[*]}"
 
 echo "-- style"
 for pair in 'fg=magenta,bold|\e[0;35;1m' 'fg=blue|\e[0;34m' 'bg=red dim|\e[0;41;2m' \
@@ -169,6 +226,11 @@ load_bindings prefix
 check "load_bindings keys" "c d G g" "${WK_KEYS[*]}"
 check "load_bindings user vs default" "0 1 1 1" "${WK_IS_USER[*]}"
 check "load_bindings groups" "|||git" "${WK_GROUP[0]}|${WK_GROUP[1]}|${WK_GROUP[2]}|${WK_GROUP[3]}"
+excluded() { is_excluded "$@" && echo yes || echo no; }
+check "is_excluded: default pattern, a default" "yes no" "$(WK_KEYS[0]=5 && excluded 0 '') $(excluded 0 '')"
+check "is_excluded: default pattern never hides yours" no "$(WK_KEYS[2]=5 && excluded 2 '')"
+check "is_excluded: a set pattern hides yours" "yes no" "$(excluded 2 '^G$') $(excluded 3 '^G$')"
+check "is_excluded: a set pattern replaces the default" "no" "$(WK_KEYS[0]=5 && excluded 0 '^G$')"
 binding_label out 2
 check "binding_label: note" "Lazygit" "$out"
 binding_label out 1
@@ -261,6 +323,8 @@ fake_format() {
 	'#{@whichkey-auto}') printf '%s' "$F_AUTO" ;;
 	'#{@whichkey-key}') printf '%s' "$F_KEY" ;;
 	'#{@whichkey-bound-key}') printf '%s' "$F_BOUND_KEY" ;;
+	'#{@whichkey-search-key}') printf '%s' "$F_SEARCH_KEY" ;;
+	'#{@whichkey-bound-search-key}') printf '%s' "$F_BOUND_SEARCH_KEY" ;;
 	'#{prefix}') printf '%s' "$F_PREFIX" ;;
 	'#{prefix2}') printf None ;;
 	'#{@whichkey-prefix}') printf '%s' "$F_SAVED_PREFIX" ;;
@@ -322,7 +386,20 @@ check "setup: send-prefix replaced before prefix None" yes \
 F_KEY=F1 F_BOUND_KEY=Space
 whichkey_load
 check "a changed @whichkey-key unbinds the old key" yes \
-	"$(before "unbind-key -T prefix Space" "bind-key -N Show key bindings F1" "$(call_with "F1")")"
+	"$(before "unbind-key -T prefix Space" "bind-key -T prefix -N Show key bindings F1" "$(call_with "F1")")"
+check "no @whichkey-search-key binds no search" "" "$(call_with "search.sh")"
+
+F_KEY='' F_BOUND_KEY='' F_SEARCH_KEY=/
+whichkey_load
+check "@whichkey-search-key binds the search" yes \
+	"$(before "bind-key -T prefix -N Search key bindings /" "search.sh" "$(call_with "Search key")")"
+F_SEARCH_KEY='' F_BOUND_SEARCH_KEY=/
+F_LIST_prefix="$F_LIST_prefix
+/${WK_SEP}Search key bindings${WK_SEP}run-shell -b \"'$ROOT/scripts/search.sh' '#{client_name}' '#{pane_id}'\""
+whichkey_load
+check "unsetting @whichkey-search-key unbinds it" yes \
+	"$(before "unbind-key -T prefix /" "set-option -gu @whichkey-bound-search-key" "$(call_with "unbind-key -T prefix /")")"
+F_BOUND_SEARCH_KEY=''
 
 F_AUTO=off F_KEY='' F_BOUND_KEY='' F_PREFIX=None F_SAVED_PREFIX=C-b
 F_LIST_root="C-b${WK_SEP}${WK_SEP}switch-client -T prefix ; run-shell -b '/x/auto.sh'"

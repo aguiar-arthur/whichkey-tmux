@@ -28,12 +28,16 @@ Screenshot docs/shots/popup.png
 Type "|"
 Sleep 1.5s
 
-# Groups get their own popup.
+# Groups get their own popup; Backspace goes back up.
 Ctrl+B
 Sleep 1.5s
 Type "w"
 Sleep 2.5s
 Screenshot docs/shots/group.png
+Backspace
+Sleep 1.5s
+Type "w"
+Sleep 1s
 Type "n"
 Sleep 1.5s
 
@@ -49,6 +53,18 @@ Sleep 2.5s
 Down@300ms 4
 Sleep 1s
 Screenshot docs/shots/catalog.png
+Escape
+Sleep 1s
+
+# prefix /: search every binding as you type.
+Ctrl+B
+Type "/"
+Sleep 1.5s
+Type "win"
+Sleep 1s
+Down
+Sleep 1.5s
+Screenshot docs/shots/search.png
 Escape
 Sleep 1s
 
