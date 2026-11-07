@@ -37,3 +37,14 @@ grid_layout() {
 		SHOWN=$1
 	fi
 }
+
+# scroll_top <var> <selected> <top> <visible>: the first row to show of a
+# list scrolled to <top>, moved as little as possible so that row
+# <selected> is one of the <visible> rows shown.
+scroll_top() {
+	local _top=$3
+	[ "$2" -ge "$_top" ] || _top=$2
+	[ "$2" -lt $((_top + $4)) ] || _top=$(($2 - $4 + 1))
+	[ "$_top" -ge 0 ] || _top=0
+	printf -v "$1" '%d' "$_top"
+}

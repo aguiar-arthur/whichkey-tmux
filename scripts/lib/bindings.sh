@@ -1,6 +1,6 @@
-# The bindings of a key table, parsed once and shared by the menu and the
-# popup. Requires tmux.sh, and WK_TMUX_VERSION set to the running tmux
-# version (#{version}).
+# The bindings of a key table, parsed once and shared by the menu, the popup
+# and the search. Requires tmux.sh and options.sh, and WK_TMUX_VERSION set to
+# the running tmux version (#{version}).
 
 WK_BINDING_FORMAT="#{key_string}$WK_SEP#{key_note}$WK_SEP#{key_command}"
 
@@ -173,5 +173,17 @@ binding_label() {
 		[ -n "${WK_NOTES[$2]}" ] || printf -v "$1" '+%s' "${WK_GROUP[$2]}"
 	else
 		printf -v "$1" '%s' "${WK_NOTES[$2]:-${WK_COMMANDS[$2]}}"
+	fi
+}
+
+# is_excluded <index> <exclude>: <exclude>, the @whichkey-exclude regex,
+# hides the binding. When it is empty, WK_DEFAULT_EXCLUDE hides some of
+# tmux's defaults and none of yours.
+is_excluded() {
+	local _key=${WK_KEYS[$1]}
+	if [ "${WK_IS_USER[$1]}" = 1 ]; then
+		[ -n "$2" ] && [[ $_key =~ $2 ]]
+	else
+		[[ $_key =~ ${2:-$WK_DEFAULT_EXCLUDE} ]]
 	fi
 }

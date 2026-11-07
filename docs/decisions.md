@@ -10,8 +10,8 @@ specific way.
 **Problem.** A which-key menu needs a list of keys and labels.
 **Decision.** Read `tmux list-keys` every time a menu or popup opens. Labels
 are binding notes (`bind -N`), falling back to the command.
-**Rejected.** A separate YAML/config of menus (what tmux-which-key does): it
-drifts from `tmux.conf` and doubles the work. Caching the user's bindings:
+**Rejected.** A separate YAML/config of menus: it drifts from `tmux.conf`
+and doubles the work. Caching the user's bindings:
 they change on every reload; reading them is fast enough.
 
 ## 2. Replay the key instead of running the command
@@ -182,3 +182,56 @@ and `teardown_auto` restores the prefix first.
 The project ships from `main`; there are no tags, GitHub releases or
 changelog. TPM installs `main`. CI on every push keeps it usable, and bug
 reports give the installed commit.
+
+## 18. Search in our own popup, not fzf
+
+**Problem.** With dozens of bindings across tables and groups, scanning a
+menu is slow; users want to type a word.
+**Decision.** `search.sh` collects the prefix table, every reachable group
+and the user's root bindings into a file, and `search-popup.sh` filters it
+in bash as the user types: substring matches first, then characters in
+order (`match_rank`). Each result shows the whole key sequence (`C-b w n`),
+and Enter replays the key in its table like a menu item (decision 2).
+**Rejected.** fzf or any other program: a runtime dependency (decision 7).
+A `display-menu` with a filter: menus cannot take free text. Hiding the
+search behind a default key: `prefix /` is tmux's "describe key", so the
+key is opt-in (`@whichkey-search-key`) and the catalog always has a
+Search… item.
+
+## 19. Backspace goes back, unless the table binds it
+
+**Problem.** In a group popup, Escape closes everything; there was no way
+back to the table above.
+**Decision.** `auto.sh` gets the path of tables that led to the popup; the
+title shows it (`prefix › window`), and Backspace reopens the popup one
+level up at once. Only when the table does not bind `BSpace` itself, so
+every key still reaches tmux (CLAUDE.md rule 11).
+**Rejected.** Escape going back one level: Escape has always closed the
+popup, and closing must stay one key away.
+
+## 20. tmux's bindings in the popup when the user has none
+
+**Problem.** The popup shows the user's bindings. On a fresh install there
+are none, so auto mode showed nothing and looked broken.
+**Decision.** `@whichkey-popup-defaults auto` (default) adds tmux's own
+bindings, filtered like the catalog, when none of the user's remain after
+setting aside the plugin's own keys. `on` always adds them after the
+user's; `off` never.
+**Rejected.** Always showing the defaults: ~60 cells drown the handful a
+user defined, which are the ones they forget.
+
+## 21. A doctor script instead of more troubleshooting text
+
+**Problem.** The common failures (plugin not loaded, prefix set after the
+plugin, a key rebound later) were documented, but each needed the user to
+run `tmux show` and `list-keys` and read the output.
+**Decision.** `scripts/doctor.sh` checks each of them against the running
+server and says what to do. It also lists bindings without notes and the
+tmux defaults the user replaced, as advice. Read-only; exit status = number
+of problems.
+
+## 22. No Nix package
+
+The project does not ship a Nix flake or package. Install with TPM or a
+clone (README). Supporting a package means a CI job and a lock file to
+keep current for a channel the maintainer does not use.
